@@ -1,0 +1,5 @@
+{
+  "name": "ColPostal 472 Manager",
+  "description": "Application to manage Colombian postal code databases and process address templates.",
+  "requestFramePermissions": []
+}
