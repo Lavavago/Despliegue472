@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Upload, Play, Download, FileSpreadsheet, AlertTriangle, Check, ArrowRight, BarChart3, Loader2, Pencil, X, Save, Square } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { processTemplateBatch, processTemplateTurbo, reprocessSingleRow } from '../services/postalService';
+import { processTemplateBatch, reprocessSingleRow, clearGeoCache, loadProcessorState, saveProcessorState } from '../services/postalService';
 import { AddressTemplate, ProcessStatus } from '../types';
 
 const ProcessorView: React.FC = () => {
@@ -12,7 +12,7 @@ const ProcessorView: React.FC = () => {
   const [progress, setProgress] = useState<number>(0);
   const [speed, setSpeed] = useState<number>(0);
   const [eta, setEta] = useState<string>('');
-  const [turbo, setTurbo] = useState<boolean>(false);
+  const [pauseUntil, setPauseUntil] = useState<number | null>(null);
   const [itemsPerPage, setItemsPerPage] = useState<number>(50);
   const [page, setPage] = useState<number>(1);
   const startTsRef = useRef<number | null>(null);
@@ -20,17 +20,24 @@ const ProcessorView: React.FC = () => {
   const lastTsRef = useRef<number>(0);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('processorState');
-      if (raw) {
-        const st = JSON.parse(raw);
-        if (Array.isArray(st.data)) setData(st.data);
-        if (st.status) setStatus(st.status);
-        if (st.fileName) setFileName(st.fileName);
+    (async () => {
+      const dbState = await loadProcessorState();
+      if (dbState && Array.isArray(dbState.data) && dbState.data.length > 0) {
+        setData(dbState.data);
+        if (dbState.fileName) setFileName(dbState.fileName);
+        setStatus(ProcessStatus.IDLE);
+      } else {
+        try {
+          const raw = localStorage.getItem('processorState');
+          if (raw) {
+            const st = JSON.parse(raw);
+            if (Array.isArray(st.data)) setData(st.data);
+            setStatus(ProcessStatus.IDLE);
+            if (st.fileName) setFileName(st.fileName);
+          }
+        } catch {}
       }
-      const turboRaw = localStorage.getItem('processorTurbo');
-      if (turboRaw) setTurbo(turboRaw === '1');
-    } catch {}
+    })();
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'processorState' && e.newValue) {
         try {
@@ -39,24 +46,47 @@ const ProcessorView: React.FC = () => {
           if (st.status) setStatus(st.status);
           if (st.fileName) setFileName(st.fileName);
         } catch {}
-      } else if (e.key === 'processorTurbo') {
-        setTurbo(e.newValue === '1');
       }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
+  const autoResumedRef = useRef(false);
+  useEffect(() => {
+    if (!autoResumedRef.current && status === ProcessStatus.PROCESSING && data.length > 0 && !abortControllerRef.current) {
+      autoResumedRef.current = true;
+      handleProcess();
+    }
+  }, [status, data]);
+
   useEffect(() => {
     try {
       const st = { data, status, fileName };
-      localStorage.setItem('processorState', JSON.stringify(st));
+      const payload = JSON.stringify(st);
+      if (payload.length < 4 * 1024 * 1024) {
+        localStorage.setItem('processorState', payload);
+      }
     } catch {}
+    (async () => {
+      try { await saveProcessorState({ data, fileName }); } catch {}
+    })();
   }, [data, status, fileName]);
 
+
   useEffect(() => {
-    try { localStorage.setItem('processorTurbo', turbo ? '1' : '0'); } catch {}
-  }, [turbo]);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('clearCache') === '1') {
+      (async () => {
+        try {
+          await clearGeoCache();
+          localStorage.removeItem('processorState');
+      
+          alert('Caché de geocodificación limpiada');
+        } catch {}
+      })();
+    }
+  }, []);
 
   // Stop Controller
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -138,21 +168,21 @@ const ProcessorView: React.FC = () => {
           const r: any = { ...row };
           if (r['Valor declarado'] !== undefined) r['Valor declarado'] = cleanCurrency(r['Valor declarado']);
           if (r['Dirección'] !== undefined) r['Dirección'] = cleanAddress(r['Dirección']);
-          if (r['direccion'] !== undefined) r['direccion'] = cleanAddress(r['direccion']);
           if (r['DANE origen'] !== undefined) r['DANE origen'] = ensureDane5(r['DANE origen']);
           if (r['DANE destino'] !== undefined) r['DANE destino'] = ensureDane5(r['DANE destino']);
+          if (r['Destinatario'] !== undefined) r['Destinatario'] = trimVal(r['Destinatario']);
           return r;
         })
         .filter((r: any) => {
-          const dane = trimVal(r['DANE destino'] || r['dane_destino']);
-          const city = trimVal(r['Ciudad de destino'] || r['ciudad_destino']);
-          const addr = trimVal(r['Dirección'] || r['direccion']);
-          const dept = trimVal(r['Departamento de destino'] || r['departamento_destino'] || r['departamento']);
+          const dane = trimVal(r['DANE destino']);
+          const city = trimVal(r['Ciudad de destino']);
+          const addr = trimVal(r['Dirección']);
+          const dept = trimVal(r['Departamento de destino']);
           return !!(dane || city || addr || dept);
         });
       
       const mappedData: AddressTemplate[] = cleanedRows.map((row: any, idx) => {
-        const rawAddr = row['Dirección'] || row['direccion'] || '';
+        const rawAddr = row['Dirección'] || '';
         const cleanAddr = String(rawAddr).trim();
 
         // Fix DANE code Padding (Requirement: 5 digits, padStart with 0)
@@ -162,8 +192,8 @@ const ProcessorView: React.FC = () => {
         return {
           id: `prev-${idx}`,
           dane_destino: paddedDane,
-          ciudad_destino: row['Ciudad de destino'] || row['ciudad_destino'],
-          departamento_destino: row['Departamento de destino'] || row['departamento_destino'] || row['departamento'],
+          ciudad_destino: row['Ciudad de destino'],
+          departamento_destino: row['Departamento de destino'],
           direccion: cleanAddr, 
           codigo_postal_asignado: undefined,
           coordenadas: undefined,
@@ -199,42 +229,37 @@ const ProcessorView: React.FC = () => {
     abortControllerRef.current = new AbortController();
     
     try {
-      const rawInput = data.map(d => ({
+      const isError = (cp?: string) => {
+        if (!cp) return true;
+        const s = String(cp).toUpperCase();
+        return s.includes('MUNICIPIO_SIN_ZONAS') || s.includes('FUERA_DE_POLIGONO') || s.includes('DIR_NO_ENCONTRADA') || s.includes('ERROR_GEOCODIFICACION') || s.includes('REVISAR_DIRECCION');
+      };
+      const pending = data.filter(d => !d.codigo_postal_asignado || isError(d.codigo_postal_asignado));
+      if (pending.length === 0) { setStatus(ProcessStatus.COMPLETED); return; }
+
+      const rawInput = pending.map(d => ({
         'DANE destino': d.dane_destino,
         'Ciudad de destino': d.ciudad_destino,
         'Departamento de destino': d.departamento_destino,
-        'Dirección': d.direccion 
+        'Dirección': d.direccion,
+        'Destinatario': String(d.originalData?.['Destinatario'] || '').trim()
       }));
 
-      // Pass signal to service
-      const results = await (turbo ? processTemplateTurbo : processTemplateBatch)(
+      const results = await processTemplateBatch(
           rawInput, 
           (pct) => setProgress(pct),
-          abortControllerRef.current.signal
+          abortControllerRef.current.signal,
+          (ms) => setPauseUntil(Date.now() + ms)
       );
-      
-      // Merge results back with original data
-      const mergedResults = results.map((res, i) => ({
-          ...res,
-          originalData: data[i].originalData
-      }));
-      
-      // If we got partial results because we stopped, we fill the rest with existing data (unprocessed)
-      // This logic depends on whether processTemplateBatch returns partial or throws. 
-      // Current impl returns partial array if stopped.
-      
-      if (results.length < data.length) {
-          // Fill remaining
-          const fullResults = [...data];
-          for(let i=0; i<results.length; i++) {
-              fullResults[i] = { ...results[i], originalData: data[i].originalData };
-          }
-          setData(fullResults);
-          setStatus(ProcessStatus.IDLE); // Stopped state
-      } else {
-          setData(mergedResults);
-          setStatus(ProcessStatus.COMPLETED);
-      }
+
+      const idToResult = new Map<string, AddressTemplate>();
+      results.forEach((res, i) => {
+        const orig = pending[i];
+        idToResult.set(orig.id, { ...res, id: orig.id, originalData: orig.originalData });
+      });
+
+      setData(prev => prev.map(item => idToResult.has(item.id) ? (idToResult.get(item.id) as AddressTemplate) : item));
+      setStatus(ProcessStatus.COMPLETED);
       
     } catch (error: any) {
       console.error(error);
@@ -278,36 +303,7 @@ const ProcessorView: React.FC = () => {
   };
 
   const handleExport = () => {
-    const exportData = data.map(d => ({
-        ...d.originalData,
-        'Codigo postal 472': d.codigo_postal_asignado || '',
-        'Coordenada': d.coordenadas || ''
-    }));
-
-    const keySet = new Set<string>();
-    const preferredOrder = [
-      'DANE origen','DANE destino','Ciudad de destino','Departamento de destino','Dirección','Valor declarado',
-      'Codigo postal 472','Coordenada'
-    ];
-    exportData.forEach(row => Object.keys(row).forEach(k => keySet.add(k)));
-    const headers: string[] = [];
-    preferredOrder.forEach(h => { if (keySet.has(h)) headers.push(h); });
-    Array.from(keySet).forEach(k => { if (!headers.includes(k)) headers.push(k); });
-
-    const quoteCSV = (val: any) => {
-      let s = val === null || val === undefined ? '' : String(val);
-      s = s.replace(/"/g, '""');
-      if (/\s/.test(s) || /,/.test(s)) return `"${s}"`;
-      return s;
-    };
-
-    const lines: string[] = [];
-    lines.push(headers.join(','));
-    exportData.forEach(row => {
-      const line = headers.map(h => quoteCSV(row[h])).join(',');
-      lines.push(line);
-    });
-    const csv = '\uFEFF' + lines.join('\n');
+    const csv = buildExportCSV(data);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -317,6 +313,111 @@ const ProcessorView: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const buildExportCSV = (rows: AddressTemplate[]): string => {
+    const exportData: Record<string, any>[] = rows.map(d => {
+      const original: Record<string, any> = { ...(d.originalData || {}) };
+      const cpAliases = ['código postal','codigo postal','Código postal','Codigo postal','cp','CP'];
+      Object.keys(original).forEach(k => {
+        if (cpAliases.includes(k)) delete original[k as any];
+        const kl = k.toLowerCase();
+        if (cpAliases.includes(kl)) delete original[k as any];
+      });
+      const rowObj: Record<string, any> = {
+        ...original,
+        'Código Postal 472': d.codigo_postal_asignado || '',
+        'Localidad': d.localidad_detectada || '',
+        'Coordenada': d.coordenadas || ''
+      };
+      return rowObj;
+    });
+    const keySet = new Set<string>();
+    const preferredOrder = [
+      'DANE origen','DANE destino','Ciudad de destino','Departamento de destino','Dirección','Valor declarado',
+      'Código Postal 472','Localidad','Coordenada'
+    ];
+    exportData.forEach(row => Object.keys(row).forEach(k => keySet.add(k)));
+    const headers: string[] = [];
+    preferredOrder.forEach(h => { if (keySet.has(h)) headers.push(h); });
+    Array.from(keySet).forEach(k => { if (!headers.includes(k)) headers.push(k); });
+    const quoteCSV = (val: any) => {
+      let s = val === null || val === undefined ? '' : String(val);
+      s = s.replace(/"/g, '""');
+      if (/\s/.test(s) || /,/.test(s)) return `"${s}"`;
+      return s;
+    };
+    const lines: string[] = [];
+    lines.push(headers.join(','));
+    exportData.forEach(row => {
+      const line = headers.map(h => quoteCSV(row[h])).join(',');
+      lines.push(line);
+    });
+    return '\uFEFF' + lines.join('\n');
+  };
+
+
+  useEffect(() => {}, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('runDemo50') === '1') {
+      const cities = [
+        { city: 'Bogotá', dane: '11001', dept: 'Bogotá D.C.' },
+        { city: 'Medellín', dane: '05001', dept: 'Antioquia' },
+        { city: 'Cali', dane: '76001', dept: 'Valle del Cauca' },
+        { city: 'Barranquilla', dane: '08001', dept: 'Atlántico' },
+        { city: 'Cartagena', dane: '13001', dept: 'Bolívar' },
+        { city: 'Bucaramanga', dane: '68001', dept: 'Santander' },
+        { city: 'Pasto', dane: '52001', dept: 'Nariño' },
+        { city: 'Manizales', dane: '17001', dept: 'Caldas' },
+        { city: 'Neiva', dane: '41001', dept: 'Huila' },
+        { city: 'Villavicencio', dane: '50001', dept: 'Meta' },
+        { city: 'Soacha', dane: '25754', dept: 'Cundinamarca' },
+        { city: 'Itagüí', dane: '05360', dept: 'Antioquia' },
+        { city: 'Envigado', dane: '05266', dept: 'Antioquia' },
+        { city: 'Yopal', dane: '85400', dept: 'Casanare' },
+        { city: 'Duitama', dane: '15238', dept: 'Boyacá' }
+      ];
+      const rows: AddressTemplate[] = Array.from({ length: 50 }).map((_, i) => {
+        const c = cities[i % cities.length];
+        const street = ['Calle','Carrera','Diagonal','Transversal'][i % 4];
+        const sNo = 5 + (i % 80);
+        const hNo = 10 + (i % 90);
+        return {
+          id: `demo-${i+1}`,
+          dane_destino: c.dane,
+          ciudad_destino: c.city,
+          departamento_destino: c.dept,
+          direccion: `${street} ${sNo} # ${hNo}-${(i % 30) + 1}`,
+          codigo_postal_asignado: undefined,
+          coordenadas: undefined,
+          originalData: {
+            'Dirección': `${street} ${sNo} # ${hNo}-${(i % 30) + 1}`,
+            'Ciudad de destino': c.city,
+            'Departamento de destino': c.dept,
+            'DANE destino': c.dane
+          }
+        } as AddressTemplate;
+      });
+      setData(rows);
+      setPage(1);
+      setStatus(ProcessStatus.IDLE);
+      setTimeout(() => { handleProcess(); }, 200);
+    }
+  }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('autoExport') === '1' && status === ProcessStatus.COMPLETED) {
+      handleExport();
+    }
+  }, [status]);
+
+  const handleCleanErrors = () => {
+    setData(prev => prev.filter(r => {
+      const s = r.codigo_postal_asignado ? String(r.codigo_postal_asignado).toUpperCase() : '';
+      if (!s) return true;
+      return !(s.includes('REVISAR_DIRECCION') || s.includes('DIR_NO_ENCONTRADA'));
+    }));
   };
 
   // EDIT HANDLERS
@@ -394,6 +495,11 @@ const ProcessorView: React.FC = () => {
                  <span className="text-[10px] text-slate-500">ETA: {eta || 'calculando...'}</span>
               </div>
               <div className="mt-2 w-full h-1 bg-gradient-to-r from-blue-200 via-blue-300 to-blue-200 animate-pulse rounded"></div>
+              {pauseUntil && Date.now() < pauseUntil && (
+                <div className="mt-2 text-xs bg-yellow-50 border border-yellow-200 text-yellow-800 rounded px-2 py-1">
+                  Límite de API alcanzado, reanudando en {Math.max(0, Math.ceil((pauseUntil - Date.now())/1000))} segundos...
+                </div>
+              )}
             </div>
         )}
 
@@ -412,17 +518,12 @@ const ProcessorView: React.FC = () => {
 
             {/* PROCESS CONTROLS */}
             <div className="flex gap-2 w-full md:w-auto">
-                <label className="flex items-center px-3 py-2 border border-slate-300 bg-white rounded-md text-xs text-slate-700">
-                  <input type="checkbox" className="mr-2" checked={turbo} onChange={(e) => setTurbo(e.target.checked)} />
-                  Modo Turbo 20s
-                </label>
                 <button
                   onClick={handleProcess}
-                  disabled={data.length === 0 || status === ProcessStatus.PROCESSING || status === ProcessStatus.COMPLETED}
+                  disabled={data.length === 0 || status === ProcessStatus.PROCESSING}
                   className={`flex-1 md:flex-none px-4 py-2 rounded-md font-medium text-sm flex items-center justify-center space-x-2 transition-all ${
                     data.length === 0 ? 'bg-slate-200 text-slate-400 cursor-not-allowed' :
                     status === ProcessStatus.PROCESSING ? 'bg-blue-700 text-white cursor-wait' :
-                    status === ProcessStatus.COMPLETED ? 'bg-green-600 text-white cursor-default' :
                     'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
                   }`}
                 >
@@ -430,11 +531,6 @@ const ProcessorView: React.FC = () => {
                     <>
                       <Loader2 className="animate-spin h-4 w-4 mr-2" />
                       <span>Procesando...</span>
-                    </>
-                  ) : status === ProcessStatus.COMPLETED ? (
-                    <>
-                      <Check className="h-4 w-4" />
-                      <span>Completado</span>
                     </>
                   ) : (
                     <>
@@ -465,6 +561,7 @@ const ProcessorView: React.FC = () => {
                 Excel
               </button>
             )}
+            
         </div>
         {status === ProcessStatus.ERROR && (
            <div className="mt-2 text-xs text-red-600 bg-red-50 p-2 rounded border border-red-100 font-medium">
@@ -517,24 +614,54 @@ const ProcessorView: React.FC = () => {
       {/* Results Table */}
       {data.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 flex-1 flex flex-col overflow-hidden">
-          <div className="px-6 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center flex-shrink-0">
-             <h3 className="font-semibold text-slate-700 text-sm">
-               Vista Previa de Datos
-             </h3>
-             <div className="flex items-center gap-2">
-               {status === ProcessStatus.COMPLETED && (
-                 <span className="text-xs font-semibold bg-green-100 text-green-800 px-2 py-1 rounded-full">Proceso Finalizado</span>
-               )}
-               <select className="border border-slate-300 bg-white rounded-md p-1.5 text-slate-700 text-xs" value={itemsPerPage} onChange={(e) => setItemsPerPage(Number(e.target.value))}>
-                 <option value={50}>50</option>
-                 <option value={100}>100</option>
-                 <option value={200}>200</option>
-               </select>
+        <div className="px-6 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center flex-shrink-0">
+           <h3 className="font-semibold text-slate-700 text-sm">
+             Vista Previa de Datos
+           </h3>
+            <div className="flex items-center gap-2">
+              {status === ProcessStatus.COMPLETED && (
+                <span className="text-xs font-semibold bg-green-100 text-green-800 px-2 py-1 rounded-full">Proceso Finalizado</span>
+              )}
+              {data.length > 0 && (
+                <button
+                  onClick={async () => { try { await saveProcessorState({ data, fileName }); } catch {} }}
+                  className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                  title="Guardar progreso"
+                >
+                  Guardar Progreso
+                </button>
+              )}
+              <button
+                onClick={async () => { const s = await loadProcessorState(); if (s?.data?.length) { setData(s.data); if (s.fileName) setFileName(s.fileName); setStatus(ProcessStatus.IDLE); } }}
+                className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                title="Recuperar progreso"
+              >
+                Recuperar Progreso
+              </button>
+              <select className="border border-slate-300 bg-white rounded-md p-1.5 text-slate-700 text-xs" value={itemsPerPage} onChange={(e) => setItemsPerPage(Number(e.target.value))}>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
                <div className="flex items-center gap-1 text-xs">
-                 <button className="px-2 py-1 border border-slate-300 rounded" disabled={page<=1} onClick={() => setPage(p => Math.max(1, p-1))}>‹</button>
-                 <span>{page}/{totalPages}</span>
-                 <button className="px-2 py-1 border border-slate-300 rounded" disabled={page>=totalPages} onClick={() => setPage(p => Math.min(totalPages, p+1))}>›</button>
-               </div>
+                <button className="px-2 py-1 border border-slate-300 rounded" disabled={page<=1} onClick={() => setPage(p => Math.max(1, p-1))}>‹</button>
+                <span>{page}/{totalPages}</span>
+                <button className="px-2 py-1 border border-slate-300 rounded" disabled={page>=totalPages} onClick={() => setPage(p => Math.min(totalPages, p+1))}>›</button>
+              </div>
+               <button
+                 className="px-2 py-1 border border-slate-300 rounded text-xs hover:bg-slate-100"
+                 onClick={async () => { await clearGeoCache(); alert('Caché de geocodificación limpiada'); }}
+                 title="Limpiar Caché"
+               >
+                 Limpiar Caché
+               </button>
+               <button
+                 className="px-2 py-1 border border-red-300 rounded text-xs text-red-700 hover:bg-red-50"
+                 onClick={handleCleanErrors}
+                 title="Limpiar Registros con Error"
+               >
+                 Limpiar Registros con Error
+               </button>
              </div>
           </div>
           <div className="flex-1 overflow-auto">
@@ -545,9 +672,10 @@ const ProcessorView: React.FC = () => {
                   <th className="px-6 py-3 text-left font-medium text-slate-500 uppercase tracking-wider w-24">DANE</th>
                   <th className="px-6 py-3 text-left font-medium text-slate-500 uppercase tracking-wider w-40">Ciudad</th>
                   <th className="px-6 py-3 text-left font-medium text-slate-500 uppercase tracking-wider">Dirección</th>
-                   <th className="px-6 py-3 text-left font-medium text-slate-500 uppercase tracking-wider w-32">Coordenada</th>
+                  <th className="px-6 py-3 text-left font-medium text-slate-500 uppercase tracking-wider w-32">Localidad</th>
+                  <th className="px-6 py-3 text-left font-medium text-slate-500 uppercase tracking-wider w-32">Coordenada</th>
                   <th className="px-6 py-3 text-left font-medium text-slate-500 uppercase tracking-wider bg-yellow-50 w-40 border-l border-yellow-100">
-                    Código Postal
+                    Código Postal 472
                   </th>
                 </tr>
               </thead>
@@ -566,10 +694,27 @@ const ProcessorView: React.FC = () => {
                                         <Pencil size={14} />
                                     </button>
                                 )}
+                                {hasError && (
+                                    <button 
+                                        onClick={async () => {
+                                          try {
+                                            const processed = await reprocessSingleRow(row);
+                                            setData(prev => prev.map(item => item.id === row.id ? processed : item));
+                                          } catch (e) {
+                                            alert('No se pudo re-procesar esta fila.');
+                                          }
+                                        }}
+                                        title="Reprocesar esta fila"
+                                        className="ml-1 text-slate-400 hover:text-green-600 transition-colors p-1 rounded hover:bg-green-50"
+                                    >
+                                        <Play size={14} />
+                                    </button>
+                                )}
                             </td>
                             <td className="px-6 py-3 whitespace-nowrap text-slate-500 font-mono">{row.dane_destino}</td>
                             <td className="px-6 py-3 whitespace-nowrap text-slate-900">{row.ciudad_destino}</td>
                             <td className="px-6 py-3 text-slate-600">{row.direccion}</td>
+                            <td className="px-6 py-3 whitespace-nowrap text-slate-500">{row.localidad_detectada || '-'}</td>
                             <td className="px-6 py-3 text-xs font-mono text-slate-400">{row.coordenadas || '-'}</td>
                             <td className={`px-6 py-3 whitespace-nowrap font-bold border-l ${
                             hasError

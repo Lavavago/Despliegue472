@@ -6,7 +6,7 @@ import ProcessorView from './components/ProcessorView';
 import MapView from './components/MapView';
 import Login from './components/Login';
 import { AuthSession } from './types';
-import { supabase, clearGeoCache } from './services/postalService';
+import { supabase, clearGeoCache, ensureMunicipalIndexWarmCache, getMunicipalIndexStats, ensureZonesWarmCache } from './services/postalService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'database' | 'processor' | 'map'>(() => {
@@ -16,7 +16,11 @@ const App: React.FC = () => {
     } catch {}
     return 'database';
   });
+  const disableAuth = ((import.meta as any).env.VITE_DISABLE_AUTH === '1');
   const [auth, setAuth] = useState<AuthSession | null>(() => {
+    if (disableAuth) {
+      return { email: 'dev@local', role: 'TI' };
+    }
     try {
       const raw = localStorage.getItem('auth');
       return raw ? JSON.parse(raw) : null;
@@ -40,6 +44,15 @@ const App: React.FC = () => {
       try { localStorage.removeItem('processorState'); } catch {}
       clearGeoCache().catch(() => {});
     }
+    (async () => {
+      try {
+        const stats = await getMunicipalIndexStats();
+        if (stats.count > 0) {
+          await ensureMunicipalIndexWarmCache();
+        }
+        await ensureZonesWarmCache();
+      } catch {}
+    })();
   }, []);
 
   return (

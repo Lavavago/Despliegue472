@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Database, RefreshCw, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileArchive, ExternalLink, Info, FileSpreadsheet } from 'lucide-react';
+import { Database, RefreshCw, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileArchive, ExternalLink, Info, FileSpreadsheet, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import shp from 'shpjs';
-import { saveShapefileData, getPostalDatabaseStats, getPaginatedPostalDatabase, updateZonesFromMasterExcel, syncZonesToSupabase } from '../services/postalService';
+import { saveShapefileData, getPostalDatabaseStats, getPaginatedPostalDatabase, updateZonesFromMasterExcel, syncZonesToSupabase, getMunicipalIndexStats, clearMunicipalIndex } from '../services/postalService';
 import { PostalZone, PaginatedResult } from '../types';
 
 
 const DatabaseView: React.FC = () => {
   const [stats, setStats] = useState({ count: 0, lastUpdated: null as Date | null });
+  const [muniIndexCount, setMuniIndexCount] = useState(0);
   const [result, setResult] = useState<PaginatedResult<PostalZone>>({ data: [], total: 0, page: 1, totalPages: 0 });
   
   const [loading, setLoading] = useState(false);
@@ -19,10 +20,13 @@ const DatabaseView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [page, setPage] = useState(1);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('');
 
   useEffect(() => {
     loadStats();
     loadTable();
+    loadMuniIndexStats();
   }, []);
 
   useEffect(() => { setPage(1); loadTable(); }, [searchQuery, itemsPerPage]);
@@ -31,6 +35,13 @@ const DatabaseView: React.FC = () => {
   const loadStats = async () => {
       const s = await getPostalDatabaseStats();
       setStats(s);
+  };
+
+  const loadMuniIndexStats = async () => {
+      try {
+        const s = await getMunicipalIndexStats();
+        setMuniIndexCount(s.count);
+      } catch {}
   };
 
   const loadTable = async () => {
@@ -127,6 +138,7 @@ const DatabaseView: React.FC = () => {
       }
   };
 
+
   const formatGeometry = (geo: any) => {
      if (!geo || !geo.coordinates) return "N/A";
      const type = geo.type;
@@ -135,7 +147,7 @@ const DatabaseView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)] flex flex-col space-y-4">
+    <div className="max-w-7xl mx-auto flex flex-col space-y-4 pb-24">
       {/* Header & Stats Section */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex-shrink-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
@@ -147,6 +159,24 @@ const DatabaseView: React.FC = () => {
             <p className="text-sm text-slate-500 mt-1">
               Gestiona la base de datos geográfica (Shapefile) y la base maestra de nombres (Excel).
             </p>
+            <div className="mt-2 flex items-center gap-2">
+              {muniIndexCount > 0 ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800">
+                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1"></span>
+                  Base Maestra: Activa
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-800">
+                  <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full mr-1"></span>
+                  Base Maestra: Inactiva
+                </span>
+              )}
+              {muniIndexCount > 0 && (
+                <button onClick={async () => { await clearMunicipalIndex(); await loadMuniIndexStats(); }} className="text-[10px] px-2 py-0.5 rounded border border-red-200 text-red-700 hover:bg-red-50">
+                  Limpiar Base Maestra
+                </button>
+              )}
+            </div>
           </div>
           
           <a 
@@ -160,9 +190,9 @@ const DatabaseView: React.FC = () => {
           </a>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           {/* Stats Card */}
-          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 md:col-span-3 min-h-[140px] flex flex-col justify-between">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Zonas</h3>
             <div className="flex items-baseline">
                 <span className="text-3xl font-bold text-slate-800">{stats.count.toLocaleString()}</span>
@@ -185,7 +215,7 @@ const DatabaseView: React.FC = () => {
 
           {/* Loading Indicator (Overlays both upload buttons if loading) */}
           {loading ? (
-             <div className="col-span-1 md:col-span-3 border-2 border-dashed border-blue-300 bg-blue-50/50 rounded-lg p-2 flex flex-col items-center justify-center">
+             <div className="md:col-span-9 border-2 border-dashed border-blue-300 bg-blue-50/50 rounded-lg p-2 flex flex-col items-center justify-center min-h-[110px]">
                 <div className="w-full px-4 text-center">
                     <div className="flex items-center justify-center mb-1 text-blue-600">
                         <RefreshCw className="animate-spin h-5 w-5 mr-2" />
@@ -200,19 +230,59 @@ const DatabaseView: React.FC = () => {
           ) : (
             <>
               {/* Upload Shapefile */}
-              <div className="col-span-1 md:col-span-2 border-2 border-dashed border-blue-200 bg-blue-50/30 rounded-lg p-2 flex flex-col items-center justify-center hover:bg-blue-50 transition-colors relative group">
+              <div className="md:col-span-6 border-2 border-dashed border-blue-200 bg-blue-50/30 rounded-lg p-2 flex flex-col items-center justify-center hover:bg-blue-50 transition-colors relative group min-h-[110px]">
                 <label className="cursor-pointer flex flex-col items-center justify-center h-full w-full">
                   <div className="bg-white p-2 rounded-full shadow-sm mb-1 group-hover:scale-110 transition-transform">
                       <FileArchive className="w-5 h-5 text-blue-600" />
                   </div>
                   <span className="text-xs font-bold text-blue-700">1. Cargar Shapefile Geográfico (.zip)</span>
                   <p className="text-[10px] text-blue-400 mt-0.5 text-center px-2">Importa los polígonos y la ubicación</p>
-                  <input type="file" className="hidden" accept=".zip" onChange={handleShapefileUpload} />
-                </label>
+              <input type="file" className="hidden" accept=".zip" onChange={handleShapefileUpload} />
+              </label>
               </div>
 
+              <div className="md:col-span-3 bg-white p-4 rounded-lg border-2 border-dashed border-green-300 hover:border-green-400 transition-colors min-h-[110px] flex flex-col justify-center">
+                <div className="flex items-center justify-center mb-3">
+                  <div className="bg-green-100 p-2 rounded-full">
+                    <FileSpreadsheet className="h-5 w-5 text-green-600" />
+                  </div>
+                </div>
+                <h3 className="text-sm font-semibold text-center mb-2">Cargar CSV Oficial</h3>
+                <p className="text-sm text-slate-600 text-center mb-4">Índice municipal (datos.gov.co)</p>
+                <label className="flex items-center justify-center w-full px-3 py-1.5 border-2 border-green-400 rounded-md cursor-pointer hover:bg-green-50 transition-colors bg-white">
+                  <Upload className="h-4 w-4 text-green-600 mr-2" />
+                  <span className="text-sm font-medium text-green-700">Seleccionar CSV</span>
+                  <input type="file" className="hidden" accept=".csv" onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIsProcessing(true);
+                    setProcessingMessage('Cargando CSV oficial...');
+                    try {
+                      const reader = new FileReader();
+                      reader.onload = async (evt) => {
+                        const text = evt.target?.result as string;
+                        const wb = XLSX.read(text, { type: 'string', raw: true });
+                        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                        const { loadOfficialPostalCSV } = await import('../services/postalService');
+                        const result = await loadOfficialPostalCSV(data as any[]);
+                        setProcessingMessage(`✅ ${result.loaded} municipios cargados`);
+                        setTimeout(() => setIsProcessing(false), 2000);
+                      };
+                      reader.readAsText(file, 'utf-8');
+                    } catch (error: any) {
+                      setProcessingMessage(`Error: ${error.message}`);
+                      setTimeout(() => setIsProcessing(false), 3000);
+                    }
+                  }} />
+                </label>
+                {isProcessing && (
+                  <p className="mt-2 text-xs text-slate-600 text-center">{processingMessage}</p>
+                )}
+              </div>
+
+
               {/* Upload Master Excel */}
-              <div className="col-span-1 border-2 border-dashed border-green-200 bg-green-50/30 rounded-lg p-2 flex flex-col items-center justify-center hover:bg-green-50 transition-colors relative group">
+              <div className="md:col-span-3 border-2 border-dashed border-green-200 bg-green-50/30 rounded-lg p-2 flex flex-col items-center justify-center hover:bg-green-50 transition-colors relative group min-h-[140px]">
                 <label className="cursor-pointer flex flex-col items-center justify-center h-full w-full">
                   <div className="bg-white p-2 rounded-full shadow-sm mb-1 group-hover:scale-110 transition-transform">
                       <FileSpreadsheet className="w-5 h-5 text-green-600" />
@@ -235,7 +305,7 @@ const DatabaseView: React.FC = () => {
       </div>
 
       {/* Data Table Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col overflow-auto">
         <div className="px-5 py-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 flex-shrink-0">
           <div className="relative max-w-sm w-full">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Search className="h-4 w-4 text-slate-400" /></div>

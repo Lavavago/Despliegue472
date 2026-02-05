@@ -3,6 +3,7 @@ export interface PostalZone {
   // Normalized properties from Shapefile attributes
   codigo_municipio: string;
   nombre_municipio: string;
+  nombre_localidad?: string;
   codigo_departamento: string;
   nombre_departamento: string;
   codigo_postal: string; // The key field (e.g., CODIGO_POS)
@@ -36,6 +37,7 @@ export interface AddressTemplate {
   direccion: string;
   codigo_postal_asignado?: string;
   coordenadas?: string; // New field for Latitude, Longitude
+  localidad_detectada?: string;
   originalData?: any; // To store the full original row from Excel
 }
 
@@ -44,6 +46,14 @@ export interface PaginatedResult<T> {
   total: number;
   page: number;
   totalPages: number;
+}
+
+export interface MunicipalIndexEntry {
+  dane: string;
+  nombre_municipio: string;
+  nombre_departamento: string;
+  entries: { codigo_postal: string; tipo: string }[];
+  preferred_postal: string;
 }
 
 export enum ProcessStatus {
