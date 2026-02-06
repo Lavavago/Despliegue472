@@ -518,7 +518,8 @@ export const upsertMunicipalIndexFromCSV = async (rows: any[], onProgress?: (per
     if (!dane || dane === '00000') return;
     const cpRaw0 = findAttributeValue(row, ['codigo_postal']);
     let cpDigits = String(cpRaw0 || '').replace(/\D/g, '');
-    if (cpDigits.length === 5) cpDigits = cpDigits + '0';
+    // FIX: padding correcto de códigos postales (si tiene 5 dígitos, anteponer '0')
+    if (cpDigits.length === 5) cpDigits = '0' + cpDigits;
     const cp = cpDigits;
     if (!cp) return;
     const muni = findAttributeValue(row, ['nombre_municipio']);
@@ -982,6 +983,8 @@ const resolveSingleAddress = async (
             }
         }
     }
+    // VALIDACIÓN: Guardar los candidatos por ciudad para verificar consistencia con DANE más adelante
+    const cityCandidatesForCheck: PostalZone[] = candidates ? [...candidates] : [];
     
     // Strategy 2: If municipality name didn't match, try DANE code (allow prefix/suffix variants)
     if ((!candidates || candidates.length === 0) && dane) { 
@@ -997,6 +1000,17 @@ const resolveSingleAddress = async (
         }
         if (candidates.length > 0) {
             console.log(`[DEBUG] Found ${candidates.length} zones by DANE match: ${d5}`);
+        }
+    }
+
+    // VALIDACIÓN DE CONSISTENCIA DANE vs Ciudad: si ambos existen y no coinciden, devolver error
+    if (cityCandidatesForCheck.length > 0 && dane) {
+        const d5Check = String(dane).replace(/\D/g, '').padStart(5, '0').slice(-5);
+        const daneCandidatesExist = !!(candidates && candidates.length > 0);
+        const cityHasDane = cityCandidatesForCheck.some(z => String(z.codigo_municipio || '').replace(/\D/g, '').padStart(5, '0').slice(-5) === d5Check);
+        if (daneCandidatesExist && !cityHasDane) {
+            // ERROR: El DANE no corresponde al municipio indicado por la ciudad
+            return { postalCode: "ERROR_DANE_CIUDAD_NO_COINCIDEN", coords: "" };
         }
     }
 
@@ -1211,6 +1225,17 @@ const resolveSingleAddress = async (
         // No address provided, but we have municipality - assign first zone or mark as incomplete
         foundPostalCode = "DATOS_INCOMPLETOS";
         console.warn(`[DEBUG] No address provided for ${city}`);
+    }
+
+    // MEJORA: si hay código postal válido pero coordenadas vacías, asignar centroide de la zona
+    if ((!foundCoords || !foundCoords.trim()) && foundPostalCode && foundPostalCode.length <= 6 &&
+        !foundPostalCode.includes('ERROR') && !foundPostalCode.includes('NO_') && !foundPostalCode.includes('SIN_')) {
+        const zoneByCP = zonesToCheck.find(z => z.codigo_postal === foundPostalCode) || db.find(z => z.codigo_postal === foundPostalCode);
+        if (zoneByCP) {
+            const latFinal = typeof zoneByCP.centerLat === 'number' ? zoneByCP.centerLat : calculateCentroid(zoneByCP.geometry).lat;
+            const lonFinal = typeof zoneByCP.centerLon === 'number' ? zoneByCP.centerLon : calculateCentroid(zoneByCP.geometry).lon;
+            foundCoords = `${latFinal}, ${lonFinal}`;
+        }
     }
 
     return { postalCode: foundPostalCode, coords: foundCoords, localidad: foundLocalidad || undefined };
