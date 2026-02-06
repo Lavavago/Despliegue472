@@ -395,11 +395,24 @@ const ProcessorView: React.FC = () => {
       })();
       const coordsFinal = (() => {
         if (String(d.coordenadas || '').trim()) return String(d.coordenadas);
-        if (cpFinal && cpFinal.length === 6 && zonesDB.length > 0) {
-          const z = zonesDB.find(z => String(z.codigo_postal) === cpFinal);
-          if (z && typeof z.centerLat === 'number' && typeof z.centerLon === 'number') {
-            try { console.warn(`[EXPORT] Coordenadas faltantes, usando centroide para CP ${cpFinal}`); } catch {}
-            return `${z.centerLat}, ${z.centerLon}`;
+        if (zonesDB.length > 0) {
+          const cityKey = normalizeCityKeyExport(original['Ciudad de destino'] ?? d.ciudad_destino);
+          let z = cpFinal ? zonesDB.find(z => String(z.codigo_postal) === cpFinal) : undefined;
+          if (!z) {
+            const candidates = zonesDB.filter(zz => normalizeCityKeyExport(zz.nombre_municipio || '') === cityKey);
+            z = candidates[0];
+          }
+          if (z) {
+            if (typeof z.centerLat === 'number' && typeof z.centerLon === 'number') {
+              try { console.warn(`[EXPORT] Coordenadas faltantes, usando centroide para CP ${cpFinal || cityKey}`); } catch {}
+              return `${z.centerLat}, ${z.centerLon}`;
+            }
+            if (Array.isArray(z.bbox) && z.bbox.length === 4) {
+              const [minLon, minLat, maxLon, maxLat] = z.bbox;
+              const lat = (minLat + maxLat) / 2;
+              const lon = (minLon + maxLon) / 2;
+              return `${lat}, ${lon}`;
+            }
           }
         }
         return String(d.coordenadas || '');
@@ -424,6 +437,8 @@ const ProcessorView: React.FC = () => {
           } else {
             cp = cp.padStart(6, '0');
           }
+          const cityFix = normalizeCityKeyExport(original['Ciudad de destino'] ?? d.ciudad_destino);
+          if (cityFix === 'ENVIGADO') cp = '055422';
           return cp;
         })(),
         'Valor declarado': valorDeclarado,
@@ -478,6 +493,10 @@ const ProcessorView: React.FC = () => {
         if (candidates.length > 0) cp = String(candidates[0].codigo_postal).replace(/\D/g, '');
         else cp = '';
       }
+      {
+        const cityFix = normalizeCityKeyExport(original['Ciudad de destino'] ?? d.ciudad_destino);
+        if (cityFix === 'ENVIGADO') cp = '055422';
+      }
       if (cp.length === 4) {
         const daneDep = String(d.dane_destino ?? original['DANE destino'] ?? '')
           .replace(/\D/g, '')
@@ -512,9 +531,22 @@ const ProcessorView: React.FC = () => {
           }
           return raw;
         }
-        if (cpFinal && cpFinal.length === 6 && zonesDB.length > 0) {
-          const z = zonesDB.find(z => String(z.codigo_postal) === cpFinal);
-          if (z && typeof z.centerLat === 'number' && typeof z.centerLon === 'number') return `${z.centerLat}, ${z.centerLon}`;
+        if (zonesDB.length > 0) {
+          let z = cpFinal ? zonesDB.find(z => String(z.codigo_postal) === cpFinal) : undefined;
+          if (!z) {
+            const cityKey = normalizeCityKeyExport(original['Ciudad de destino'] ?? d.ciudad_destino);
+            const candidates = zonesDB.filter(zz => normalizeCityKeyExport(zz.nombre_municipio || '') === cityKey);
+            z = candidates[0];
+          }
+          if (z) {
+            if (typeof z.centerLat === 'number' && typeof z.centerLon === 'number') return `${z.centerLat}, ${z.centerLon}`;
+            if (Array.isArray(z.bbox) && z.bbox.length === 4) {
+              const [minLon, minLat, maxLon, maxLat] = z.bbox;
+              const lat = (minLat + maxLat) / 2;
+              const lon = (minLon + maxLon) / 2;
+              return `${lat}, ${lon}`;
+            }
+          }
         }
         return '';
       })();
