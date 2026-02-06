@@ -427,23 +427,68 @@ const ProcessorView: React.FC = () => {
   };
 
   const buildExportRows = (rows: AddressTemplate[]): Record<string, any>[] => {
-    const exportCSV = buildExportCSV(rows);
-    const lines = exportCSV.replace(/^\uFEFF/, '').split('\n');
-    const headers = lines.shift()?.split(',') || [];
-    const parse = (cell: string) => {
-      if (!cell) return '';
-      const quoted = cell.startsWith('"') && cell.endsWith('"');
-      const val = quoted ? cell.slice(1, -1).replace(/""/g, '"') : cell;
-      return val;
-    };
-    const out: Record<string, any>[] = [];
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const cells = line.split(',');
-      const obj: Record<string, any> = {};
-      headers.forEach((h, i) => { obj[h] = parse(cells[i] || ''); });
-      out.push(obj);
-    }
+    const normalizeCityKeyExport = (s: string) => String(s || '')
+      .replace(/\(.*?\)/g, '')
+      .replace(/\bD\.?C\.?\b/gi, '')
+      .replace(/\s*-\s*[A-Za-z\.]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .trim();
+
+    const out: Record<string, any>[] = rows.map(d => {
+      const original: Record<string, any> = { ...(d.originalData || {}) };
+      const daneOrigenOut = String(original['DANE origen'] ?? '').padStart(5, '0');
+      const daneDestinoOut = String(d.dane_destino ?? original['DANE destino'] ?? '').padStart(5, '0');
+      let cp = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
+      if (cp.length < 6) {
+        const cityKey = normalizeCityKeyExport(original['Ciudad de destino'] ?? d.ciudad_destino);
+        const candidates = zonesDB.filter(z => normalizeCityKeyExport(z.nombre_municipio || '') === cityKey);
+        if (candidates.length > 0) cp = String(candidates[0].codigo_postal).replace(/\D/g, '').padStart(6, '0');
+      }
+      if (cp.startsWith('00') && cp.length === 6) cp = '0' + cp.substring(2);
+      const cpFinal = cp.length === 6 ? cp : cp.padStart(6, '0');
+      const cleanCityForExport = (v: any) => String(v ?? d.ciudad_destino ?? '')
+        .replace(/\(.*?\)/g, '')
+        .replace(/\bD\.?C\.?\b/gi, '')
+        .replace(/\s*-\s*[A-Za-z\.]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim();
+      const valorDeclarado = Number(String(original['Valor declarado'] ?? '').replace(/[^0-9]/g, '') || '0');
+      const coordsFinal = (() => {
+        const raw = String(d.coordenadas || '').trim();
+        if (raw) {
+          const parts = raw.replace(/"/g, '').split(',');
+          if (parts.length >= 2) {
+            const lat = parseFloat(parts[0]);
+            const lon = parseFloat(parts[1]);
+            if (!isNaN(lat) && !isNaN(lon)) return `${lat}, ${lon}`;
+          }
+          return raw;
+        }
+        if (cpFinal && cpFinal.length === 6 && zonesDB.length > 0) {
+          const z = zonesDB.find(z => String(z.codigo_postal) === cpFinal);
+          if (z && typeof z.centerLat === 'number' && typeof z.centerLon === 'number') return `${z.centerLat}, ${z.centerLon}`;
+        }
+        return '';
+      })();
+
+      return {
+        ...original,
+        'DANE origen': String(daneOrigenOut),
+        'DANE destino': String(daneDestinoOut),
+        'Ciudad de destino': cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino),
+        'Código Postal 472': String(cpFinal),
+        'Valor declarado': valorDeclarado,
+        'Localidad': d.localidad_detectada || '',
+        'Coordenada': coordsFinal
+      };
+    });
+
     return out;
   };
 
