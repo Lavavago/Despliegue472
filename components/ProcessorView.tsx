@@ -345,16 +345,7 @@ const ProcessorView: React.FC = () => {
         }
       }
     }
-    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Reporteador_Con_Codigos.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    XLSX.writeFile(wb, 'Reporteador_Con_Codigos.xlsx', { bookType: 'xlsx' });
   };
 
   const buildExportCSV = (rows: AddressTemplate[]): string => {
