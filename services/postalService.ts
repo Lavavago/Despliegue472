@@ -1240,6 +1240,26 @@ const resolveSingleAddress = async (
         }
     }
 
+    // SI EL CP ES CORTO, intentar restaurarlo desde índice municipal por DANE o ciudad
+    if (foundPostalCode && foundPostalCode.length > 0 && foundPostalCode.length < 6 &&
+        !foundPostalCode.includes('ERROR') && !foundPostalCode.includes('_') &&
+        !foundPostalCode.includes('NO_') && !foundPostalCode.includes('SIN_')) {
+        const idx = dane ? await getMunicipalIndexByDane(dane) : null;
+        let restored = idx?.preferred_postal || '';
+        if (!restored) {
+            const idx2 = await getMunicipalIndexByCityName(strictCityName);
+            restored = idx2?.preferred_postal || '';
+        }
+        if (restored) {
+            foundPostalCode = String(restored);
+            const zf = zonesToCheck.find(z => z.codigo_postal === foundPostalCode) || db.find(z => z.codigo_postal === foundPostalCode);
+            if ((!foundCoords || !foundCoords.trim()) && zf) {
+                const latF = typeof zf.centerLat === 'number' ? zf.centerLat : calculateCentroid(zf.geometry).lat;
+                const lonF = typeof zf.centerLon === 'number' ? zf.centerLon : calculateCentroid(zf.geometry).lon;
+                foundCoords = `${latF}, ${lonF}`;
+            }
+        }
+    }
     // NORMALIZAR código postal a 6 dígitos antes de retornar
     if (foundPostalCode && foundPostalCode.length > 0 && foundPostalCode.length <= 6 &&
         !foundPostalCode.includes('ERROR') && !foundPostalCode.includes('_') &&

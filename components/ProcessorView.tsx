@@ -322,6 +322,29 @@ const ProcessorView: React.FC = () => {
     const ws = XLSX.utils.json_to_sheet(exportRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Reporteador');
+    const ref = ws['!ref'];
+    if (ref) {
+      const range = XLSX.utils.decode_range(ref);
+      const headerMap: Record<string, number> = {};
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r: range.s.r, c });
+        const cell = ws[addr];
+        const h = cell && String(cell.v || '');
+        if (h) headerMap[h] = c;
+      }
+      const forceText = ['DANE origen','DANE destino','Código Postal 472'];
+      for (const h of forceText) {
+        const col = headerMap[h];
+        if (col !== undefined) {
+          for (let r = range.s.r + 1; r <= range.e.r; r++) {
+            const addr = XLSX.utils.encode_cell({ r, c: col });
+            const cell = ws[addr];
+            if (cell) { cell.t = 's'; cell.v = String(cell.v ?? ''); }
+            else { ws[addr] = { t: 's', v: '' } as any; }
+          }
+        }
+      }
+    }
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
@@ -445,10 +468,11 @@ const ProcessorView: React.FC = () => {
       if (cp.length < 6) {
         const cityKey = normalizeCityKeyExport(original['Ciudad de destino'] ?? d.ciudad_destino);
         const candidates = zonesDB.filter(z => normalizeCityKeyExport(z.nombre_municipio || '') === cityKey);
-        if (candidates.length > 0) cp = String(candidates[0].codigo_postal).replace(/\D/g, '').padStart(6, '0');
+        if (candidates.length > 0) cp = String(candidates[0].codigo_postal).replace(/\D/g, '');
+        else cp = '';
       }
-      if (cp.startsWith('00') && cp.length === 6) cp = '0' + cp.substring(2);
-      const cpFinal = cp.length === 6 ? cp : cp.padStart(6, '0');
+      if (cp.length === 6 && cp.startsWith('00')) cp = '0' + cp.substring(2);
+      const cpFinal = cp.length === 6 ? cp : '';
       const cleanCityForExport = (v: any) => String(v ?? d.ciudad_destino ?? '')
         .replace(/\(.*?\)/g, '')
         .replace(/\bD\.?C\.?\b/gi, '')
