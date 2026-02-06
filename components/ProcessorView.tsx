@@ -335,12 +335,9 @@ const ProcessorView: React.FC = () => {
         const kl = k.toLowerCase();
         if (cpAliases.includes(kl)) delete original[k as any];
       });
-      const daneOrigenDigits = String(original['DANE origen'] ?? '').replace(/\D/g, '');
-      const daneDestinoDigits = String(d.dane_destino ?? original['DANE destino'] ?? '').replace(/\D/g, '');
-      const daneOrigen = daneOrigenDigits ? daneOrigenDigits.padStart(5, '0').slice(-5) : '';
-      const daneDestino = daneDestinoDigits ? daneDestinoDigits.padStart(5, '0').slice(-5) : '';
-      const cpDigits = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
-      const cpPadded = cpDigits ? cpDigits.padStart(6, '0').slice(-6) : String(d.codigo_postal_asignado ?? '');
+      const daneOrigenOut = String(original['DANE origen'] ?? '').padStart(5, '0');
+      const daneDestinoOut = String(d.dane_destino ?? original['DANE destino'] ?? '').padStart(5, '0');
+      const cpOut = String(d.codigo_postal_asignado ?? '').padStart(6, '0');
       const toText = (s: string) => (s ? `'${s}` : '');
       const cleanCityForExport = (v: any) => String(v ?? d.ciudad_destino ?? '')
         .replace(/\(.*?\)/g, '')
@@ -355,10 +352,10 @@ const ProcessorView: React.FC = () => {
         .replace(/[^0-9]/g, '') || '0');
       const rowObj: Record<string, any> = {
         ...original,
-        'DANE origen': toText(daneOrigen),
-        'DANE destino': toText(daneDestino),
+        'DANE origen': toText(daneOrigenOut),
+        'DANE destino': toText(daneDestinoOut),
         'Ciudad de destino': cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino),
-        'Código Postal 472': toText(cpPadded),
+        'Código Postal 472': toText(cpOut),
         'Valor declarado': valorDeclarado,
         'Localidad': d.localidad_detectada || '',
         'Coordenada': d.coordenadas || ''
