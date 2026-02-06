@@ -337,8 +337,6 @@ const ProcessorView: React.FC = () => {
       });
       const daneOrigenOut = String(original['DANE origen'] ?? '').padStart(5, '0');
       const daneDestinoOut = String(d.dane_destino ?? original['DANE destino'] ?? '').padStart(5, '0');
-      const cpOut = String(d.codigo_postal_asignado ?? '').padStart(6, '0');
-      const toText = (s: string) => (s ? `'${s}` : '');
       const cleanCityForExport = (v: any) => String(v ?? d.ciudad_destino ?? '')
         .replace(/\(.*?\)/g, '')
         .replace(/\bD\.?C\.?\b/gi, '')
@@ -352,10 +350,15 @@ const ProcessorView: React.FC = () => {
         .replace(/[^0-9]/g, '') || '0');
       const rowObj: Record<string, any> = {
         ...original,
-        'DANE origen': toText(daneOrigenOut),
-        'DANE destino': toText(daneDestinoOut),
+        'DANE origen': String(daneOrigenOut),
+        'DANE destino': String(daneDestinoOut),
         'Ciudad de destino': cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino),
-        'Código Postal 472': toText(cpOut),
+        'Código Postal 472': (() => {
+          let cp = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
+          if (cp.startsWith('00') && cp.length === 6) { cp = '0' + cp.substring(2); }
+          cp = cp.padStart(6, '0');
+          return cp;
+        })(),
         'Valor declarado': valorDeclarado,
         'Localidad': d.localidad_detectada || '',
         'Coordenada': d.coordenadas || ''
