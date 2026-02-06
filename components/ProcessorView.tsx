@@ -319,7 +319,16 @@ const ProcessorView: React.FC = () => {
 
   const handleExport = () => {
     const exportRows = buildExportRows(data);
-    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const keySet = new Set<string>();
+    exportRows.forEach(row => Object.keys(row).forEach(k => keySet.add(k)));
+    const preferredOrder = [
+      'DANE origen','DANE destino','Ciudad de destino','Departamento de destino','Dirección','Valor declarado',
+      'Código Postal 472','Localidad','Coordenada'
+    ];
+    const headers: string[] = [];
+    preferredOrder.forEach(h => { if (keySet.has(h)) headers.push(h); });
+    Array.from(keySet).forEach(k => { if (!headers.includes(k)) headers.push(k); });
+    const ws = XLSX.utils.json_to_sheet(exportRows, { header: headers });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Reporteador');
     const ref = ws['!ref'];
@@ -484,6 +493,12 @@ const ProcessorView: React.FC = () => {
 
     const out: Record<string, any>[] = rows.map(d => {
       const original: Record<string, any> = { ...(d.originalData || {}) };
+      const cpAliases = ['código postal','codigo postal','Código postal','Codigo postal','cp','CP'];
+      Object.keys(original).forEach(k => {
+        if (cpAliases.includes(k)) delete original[k as any];
+        const kl = k.toLowerCase();
+        if (cpAliases.includes(kl)) delete original[k as any];
+      });
       const daneOrigenOut = String(original['DANE origen'] ?? '').padStart(5, '0');
       const daneDestinoOut = String(d.dane_destino ?? original['DANE destino'] ?? '').padStart(5, '0');
       let cp = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
