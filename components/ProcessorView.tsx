@@ -163,6 +163,16 @@ const ProcessorView: React.FC = () => {
         return '00000';
       };
 
+      const cleanCity = (v: any) => String(v ?? '')
+        .replace(/\(.*?\)/g, '')
+        .replace(/\bD\.?C\.?\b/gi, '')
+        .replace(/\s*-\s*[A-Za-z\.]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim();
+
       const cleanedRows = (jsonData as any[])
         .map((row: any) => {
           const r: any = { ...row };
@@ -170,6 +180,7 @@ const ProcessorView: React.FC = () => {
           if (r['Dirección'] !== undefined) r['Dirección'] = cleanAddress(r['Dirección']);
           if (r['DANE origen'] !== undefined) r['DANE origen'] = ensureDane5(r['DANE origen']);
           if (r['DANE destino'] !== undefined) r['DANE destino'] = ensureDane5(r['DANE destino']);
+          if (r['Ciudad de destino'] !== undefined) r['Ciudad de destino'] = cleanCity(r['Ciudad de destino']);
           if (r['Destinatario'] !== undefined) r['Destinatario'] = trimVal(r['Destinatario']);
           return r;
         })
@@ -192,7 +203,7 @@ const ProcessorView: React.FC = () => {
         return {
           id: `prev-${idx}`,
           dane_destino: paddedDane,
-          ciudad_destino: row['Ciudad de destino'],
+          ciudad_destino: cleanCity(row['Ciudad de destino']),
           departamento_destino: row['Departamento de destino'],
           direccion: cleanAddr, 
           codigo_postal_asignado: undefined,
@@ -324,9 +335,31 @@ const ProcessorView: React.FC = () => {
         const kl = k.toLowerCase();
         if (cpAliases.includes(kl)) delete original[k as any];
       });
+      const daneOrigenDigits = String(original['DANE origen'] ?? '').replace(/\D/g, '');
+      const daneDestinoDigits = String(d.dane_destino ?? original['DANE destino'] ?? '').replace(/\D/g, '');
+      const daneOrigen = daneOrigenDigits ? daneOrigenDigits.padStart(5, '0').slice(-5) : '';
+      const daneDestino = daneDestinoDigits ? daneDestinoDigits.padStart(5, '0').slice(-5) : '';
+      const cpDigits = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
+      const cpPadded = cpDigits ? cpDigits.padStart(6, '0').slice(-6) : String(d.codigo_postal_asignado ?? '');
+      const toText = (s: string) => (s ? `'${s}` : '');
+      const cleanCityForExport = (v: any) => String(v ?? d.ciudad_destino ?? '')
+        .replace(/\(.*?\)/g, '')
+        .replace(/\bD\.?C\.?\b/gi, '')
+        .replace(/\s*-\s*[A-Za-z\.]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim();
+      const valorDeclarado = Number(String(original['Valor declarado'] ?? '')
+        .replace(/[^0-9]/g, '') || '0');
       const rowObj: Record<string, any> = {
         ...original,
-        'Código Postal 472': d.codigo_postal_asignado || '',
+        'DANE origen': toText(daneOrigen),
+        'DANE destino': toText(daneDestino),
+        'Ciudad de destino': cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino),
+        'Código Postal 472': toText(cpPadded),
+        'Valor declarado': valorDeclarado,
         'Localidad': d.localidad_detectada || '',
         'Coordenada': d.coordenadas || ''
       };
@@ -681,7 +714,21 @@ const ProcessorView: React.FC = () => {
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
                 {pagedData.map((row) => {
-                    const hasError = !row.codigo_postal_asignado || row.codigo_postal_asignado.length > 6 || isNaN(Number(row.codigo_postal_asignado));
+                    const daneDigits = String(row.dane_destino ?? '').replace(/\D/g, '').padStart(5, '0').slice(-5);
+                    const cityDisplay = String(row.ciudad_destino ?? '')
+                      .replace(/\(.*?\)/g, '')
+                      .replace(/\bD\.?C\.?\b/gi, '')
+                      .replace(/\s*-\s*[A-Za-z\.]+$/g, '')
+                      .replace(/\s+/g, ' ')
+                      .normalize('NFD')
+                      .replace(/[\u0300-\u036f]/g, '')
+                      .toUpperCase()
+                      .trim();
+                    const cpDigitsDisplay = String(row.codigo_postal_asignado ?? '').replace(/\D/g, '');
+                    const cpDisplay = cpDigitsDisplay ? cpDigitsDisplay.padStart(6, '0').slice(-6) : '';
+                    const noCP = !row.codigo_postal_asignado;
+                    const errorCP = !!row.codigo_postal_asignado && (row.codigo_postal_asignado.length > 6 || isNaN(Number(row.codigo_postal_asignado)));
+                    const hasError = noCP || errorCP;
                     return (
                         <tr key={row.id} className="hover:bg-slate-50 group">
                             <td className="px-4 py-3 whitespace-nowrap">
@@ -711,17 +758,19 @@ const ProcessorView: React.FC = () => {
                                     </button>
                                 )}
                             </td>
-                            <td className="px-6 py-3 whitespace-nowrap text-slate-500 font-mono">{row.dane_destino}</td>
-                            <td className="px-6 py-3 whitespace-nowrap text-slate-900">{row.ciudad_destino}</td>
+                            <td className="px-6 py-3 whitespace-nowrap text-slate-500 font-mono">{daneDigits}</td>
+                            <td className="px-6 py-3 whitespace-nowrap text-slate-900">{cityDisplay}</td>
                             <td className="px-6 py-3 text-slate-600">{row.direccion}</td>
                             <td className="px-6 py-3 whitespace-nowrap text-slate-500">{row.localidad_detectada || '-'}</td>
                             <td className="px-6 py-3 text-xs font-mono text-slate-400">{row.coordenadas || '-'}</td>
                             <td className={`px-6 py-3 whitespace-nowrap font-bold border-l ${
-                            hasError
-                                ? 'text-red-500 bg-red-50' 
-                                : 'text-blue-600 bg-yellow-50'
+                            noCP
+                                ? 'text-orange-600 bg-orange-50'
+                                : errorCP
+                                    ? 'text-red-500 bg-red-50'
+                                    : 'text-blue-600 bg-yellow-50'
                             }`}>
-                            {row.codigo_postal_asignado || "---"}
+                            {cpDisplay || "---"}
                             </td>
                         </tr>
                     );
