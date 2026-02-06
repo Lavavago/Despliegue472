@@ -418,7 +418,23 @@ const ProcessorView: React.FC = () => {
         'DANE origen': String(daneOrigenOut),
         'DANE destino': String(daneDestinoOut),
         'Ciudad de destino': cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino),
-        'Código Postal 472': String(cpFinal),
+        'Código Postal 472': (() => {
+          let cp = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
+          if (cp.length === 4) {
+            const daneDep = String(d.dane_destino ?? '')
+              .replace(/\D/g, '')
+              .padStart(5, '0')
+              .slice(0, 2);
+            if (daneDep === '05' && cp.startsWith('5')) {
+              cp = '05' + cp;
+            } else {
+              cp = cp.padStart(6, '0');
+            }
+          } else {
+            cp = cp.padStart(6, '0');
+          }
+          return cp;
+        })(),
         'Valor declarado': valorDeclarado,
         'Localidad': d.localidad_detectada || '',
         'Coordenada': coordsFinal || ''
