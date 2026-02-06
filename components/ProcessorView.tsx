@@ -487,6 +487,17 @@ const ProcessorView: React.FC = () => {
         if (candidates.length > 0) cp = String(candidates[0].codigo_postal).replace(/\D/g, '');
         else cp = '';
       }
+      if (cp.length === 4) {
+        const daneDep = String(d.dane_destino ?? original['DANE destino'] ?? '')
+          .replace(/\D/g, '')
+          .padStart(5, '0')
+          .slice(0, 2);
+        if (daneDep === '05' && cp.startsWith('5')) {
+          cp = '05' + cp;
+        } else {
+          cp = cp.padStart(6, '0');
+        }
+      }
       if (cp.length === 6 && cp.startsWith('00')) cp = '0' + cp.substring(2);
       const cpFinal = cp.length === 6 ? cp : '';
       const cleanCityForExport = (v: any) => String(v ?? d.ciudad_destino ?? '')
