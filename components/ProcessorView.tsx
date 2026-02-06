@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Upload, Play, Download, FileSpreadsheet, AlertTriangle, Check, ArrowRight, BarChart3, Loader2, Pencil, X, Save, Square } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { processTemplateBatch, reprocessSingleRow, clearGeoCache, loadProcessorState, saveProcessorState } from '../services/postalService';
-import { AddressTemplate, ProcessStatus } from '../types';
+import { processTemplateBatch, reprocessSingleRow, clearGeoCache, loadProcessorState, saveProcessorState, getAllPostalZones } from '../services/postalService';
+import { AddressTemplate, ProcessStatus, PostalZone } from '../types';
 
 const ProcessorView: React.FC = () => {
   const [status, setStatus] = useState<ProcessStatus>(ProcessStatus.IDLE);
@@ -15,6 +15,7 @@ const ProcessorView: React.FC = () => {
   const [pauseUntil, setPauseUntil] = useState<number | null>(null);
   const [itemsPerPage, setItemsPerPage] = useState<number>(50);
   const [page, setPage] = useState<number>(1);
+  const [zonesDB, setZonesDB] = useState<PostalZone[]>([]);
   const startTsRef = useRef<number | null>(null);
   const lastPctRef = useRef<number>(0);
   const lastTsRef = useRef<number>(0);
@@ -37,6 +38,9 @@ const ProcessorView: React.FC = () => {
           }
         } catch {}
       }
+    })();
+    (async () => {
+      try { const zones = await getAllPostalZones(); setZonesDB(zones || []); } catch {}
     })();
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'processorState' && e.newValue) {
@@ -314,12 +318,16 @@ const ProcessorView: React.FC = () => {
   };
 
   const handleExport = () => {
-    const csv = buildExportCSV(data);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const exportRows = buildExportRows(data);
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Reporteador');
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'Reporteador_Con_Codigos.csv';
+    a.download = 'Reporteador_Con_Codigos.xlsx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -348,20 +356,49 @@ const ProcessorView: React.FC = () => {
         .trim();
       const valorDeclarado = Number(String(original['Valor declarado'] ?? '')
         .replace(/[^0-9]/g, '') || '0');
+      const normalizeCityKeyExport = (s: string) => String(s || '')
+        .replace(/\(.*?\)/g, '')
+        .replace(/\bD\.?C\.?\b/gi, '')
+        .replace(/\s*-\s*[A-Za-z\.]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim();
+
+      const cpFinal = (() => {
+        let cp = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
+        if (cp.length < 6) {
+          const cityKey = normalizeCityKeyExport(original['Ciudad de destino'] ?? d.ciudad_destino);
+          const candidates = zonesDB.filter(z => normalizeCityKeyExport(z.nombre_municipio || '') === cityKey);
+          if (candidates.length > 0) {
+            cp = String(candidates[0].codigo_postal).replace(/\D/g, '').padStart(6, '0');
+            try { console.warn(`[EXPORT] CP truncado restaurado por ciudad: ${cityKey} -> ${cp}`); } catch {}
+          }
+        }
+        if (cp.startsWith('00') && cp.length === 6) { cp = '0' + cp.substring(2); }
+        return cp.length === 6 ? cp : cp.padStart(6, '0');
+      })();
+      const coordsFinal = (() => {
+        if (String(d.coordenadas || '').trim()) return String(d.coordenadas);
+        if (cpFinal && cpFinal.length === 6 && zonesDB.length > 0) {
+          const z = zonesDB.find(z => String(z.codigo_postal) === cpFinal);
+          if (z && typeof z.centerLat === 'number' && typeof z.centerLon === 'number') {
+            try { console.warn(`[EXPORT] Coordenadas faltantes, usando centroide para CP ${cpFinal}`); } catch {}
+            return `${z.centerLat}, ${z.centerLon}`;
+          }
+        }
+        return String(d.coordenadas || '');
+      })();
       const rowObj: Record<string, any> = {
         ...original,
         'DANE origen': String(daneOrigenOut),
         'DANE destino': String(daneDestinoOut),
         'Ciudad de destino': cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino),
-        'Código Postal 472': (() => {
-          let cp = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
-          if (cp.startsWith('00') && cp.length === 6) { cp = '0' + cp.substring(2); }
-          cp = cp.padStart(6, '0');
-          return cp;
-        })(),
+        'Código Postal 472': String(cpFinal),
         'Valor declarado': valorDeclarado,
         'Localidad': d.localidad_detectada || '',
-        'Coordenada': d.coordenadas || ''
+        'Coordenada': coordsFinal || ''
       };
       return rowObj;
     });
@@ -387,6 +424,27 @@ const ProcessorView: React.FC = () => {
       lines.push(line);
     });
     return '\uFEFF' + lines.join('\n');
+  };
+
+  const buildExportRows = (rows: AddressTemplate[]): Record<string, any>[] => {
+    const exportCSV = buildExportCSV(rows);
+    const lines = exportCSV.replace(/^\uFEFF/, '').split('\n');
+    const headers = lines.shift()?.split(',') || [];
+    const parse = (cell: string) => {
+      if (!cell) return '';
+      const quoted = cell.startsWith('"') && cell.endsWith('"');
+      const val = quoted ? cell.slice(1, -1).replace(/""/g, '"') : cell;
+      return val;
+    };
+    const out: Record<string, any>[] = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const cells = line.split(',');
+      const obj: Record<string, any> = {};
+      headers.forEach((h, i) => { obj[h] = parse(cells[i] || ''); });
+      out.push(obj);
+    }
+    return out;
   };
 
 
