@@ -518,8 +518,8 @@ export const upsertMunicipalIndexFromCSV = async (rows: any[], onProgress?: (per
     if (!dane || dane === '00000') return;
     const cpRaw0 = findAttributeValue(row, ['codigo_postal']);
     let cpDigits = String(cpRaw0 || '').replace(/\D/g, '');
-    // FIX: padding correcto de códigos postales (si tiene 5 dígitos, anteponer '0')
-    if (cpDigits.length === 5) cpDigits = '0' + cpDigits;
+    // FIX: SIEMPRE normalizar a 6 dígitos con padding de ceros
+    cpDigits = cpDigits.padStart(6, '0');
     const cp = cpDigits;
     if (!cp) return;
     const muni = findAttributeValue(row, ['nombre_municipio']);
@@ -668,7 +668,9 @@ export const saveShapefileData = async (geoJson: any, onProgress?: (percent: num
           for (let j = i; j < end; j++) {
               const f = features[j];
               const props = f.properties || {};
-              const cp = findAttributeValue(props, ['CODIGO_POS', 'CODIGO_POSTAL', 'COD_POSTAL', 'POSTAL_CODE', 'ZONA_POSTAL', 'CP', 'COD_POS', 'CODIGO', 'ZONA']) || '000000';
+              let cp = findAttributeValue(props, ['CODIGO_POS', 'CODIGO_POSTAL', 'COD_POSTAL', 'POSTAL_CODE', 'ZONA_POSTAL', 'CP', 'COD_POS', 'CODIGO', 'ZONA']) || '000000';
+              // Normalizar a 6 dígitos
+              cp = String(cp).replace(/\D/g, '').padStart(6, '0');
               const muniCode = findAttributeValue(props, ['MPIO_CDGO', 'MPIO_CCNCT', 'COD_MPIO', 'CODIGO_MUNICIPIO', 'DANE_MPIO', 'DANE', 'MPIO_CCDGO', 'MPIO_COD', 'COD_MUN', 'MUN_COD']);
               const muniName = findAttributeValue(props, ['MPIO_CNMBR', 'NOM_MPIO', 'NOMBRE_MUNICIPIO', 'MUNICIPIO', 'NOM_MUNICIPIO', 'NOMBRE', 'MPIO_NJ', 'MPIO_CNM', 'MPI_CNMBR', 'MUN_CNMBR', 'MUNICIPIO_NOMBRE', 'MPIO_NOMBRE']);
               const locName = findAttributeValue(props, ['LOCALIDAD', 'LOC_CNMBR', 'NOM_LOC', 'LOCALIDAD_NOMBRE', 'NOMBRE_LOCALIDAD', 'LOCALIDAD_NOM']);
@@ -1236,6 +1238,13 @@ const resolveSingleAddress = async (
             const lonFinal = typeof zoneByCP.centerLon === 'number' ? zoneByCP.centerLon : calculateCentroid(zoneByCP.geometry).lon;
             foundCoords = `${latFinal}, ${lonFinal}`;
         }
+    }
+
+    // NORMALIZAR código postal a 6 dígitos antes de retornar
+    if (foundPostalCode && foundPostalCode.length > 0 && foundPostalCode.length <= 6 &&
+        !foundPostalCode.includes('ERROR') && !foundPostalCode.includes('_') &&
+        !foundPostalCode.includes('NO_') && !foundPostalCode.includes('SIN_')) {
+        foundPostalCode = foundPostalCode.padStart(6, '0');
     }
 
     return { postalCode: foundPostalCode, coords: foundCoords, localidad: foundLocalidad || undefined };
