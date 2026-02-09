@@ -8,9 +8,10 @@ import { createClient } from '@supabase/supabase-js';
   =============================================================================
 */
 const DB_NAME = 'ColPostalDB';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const STORE_ZONES = 'zones';
 const STORE_GEO_CACHE = 'geo_cache';
+const STORE_472_CACHE = 'official_472_cache';
 const STORE_MUNI_INDEX = 'muni_index';
 const STORE_PROCESSOR_STATE = 'processor_state';
 
@@ -105,6 +106,34 @@ export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY as string
 );
 
+const useOfficialAPI = (): boolean => {
+  const flag = ((import.meta as any).env.VITE_USE_472_API === '1');
+  const url = ((import.meta as any).env.VITE_472_API_URL || '').trim();
+  return !!flag && !!url;
+};
+
+const fetchOfficialPostal = async (address: string, city: string, department: string): Promise<{ postalCode: string, coords: string } | null> => {
+  const url = ((import.meta as any).env.VITE_472_API_URL || '').trim();
+  const key = ((import.meta as any).env.VITE_472_API_KEY || '').trim();
+  if (!url) return null;
+  try {
+    const body = JSON.stringify({ address, city, department });
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? { 'Authorization': `Bearer ${key}` } : {}) }, body });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const cp = String(
+      data?.postalCode || data?.codigo_postal || data?.cp || ''
+    ).replace(/\D/g, '').padStart(6, '0').slice(-6);
+    const lat = typeof data?.lat === 'number' ? data.lat : parseFloat(String(data?.latitude || ''));
+    const lon = typeof data?.lon === 'number' ? data.lon : parseFloat(String(data?.longitude || data?.lng || ''));
+    const coords = (!isNaN(lat) && !isNaN(lon)) ? `${lat}, ${lon}` : '';
+    if (!cp) return null;
+    return { postalCode: cp, coords };
+  } catch {
+    return null;
+  }
+};
+
 // Helper to open DB
 const openDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -127,6 +156,9 @@ const openDB = (): Promise<IDBDatabase> => {
       }
       if (!db.objectStoreNames.contains(STORE_PROCESSOR_STATE)) {
         db.createObjectStore(STORE_PROCESSOR_STATE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_472_CACHE)) {
+        db.createObjectStore(STORE_472_CACHE, { keyPath: 'key' });
       }
     };
 
@@ -184,6 +216,31 @@ export const clearGeoCache = async (): Promise<void> => {
         req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);
     });
+};
+
+const getCachedOfficial = async (key: string): Promise<{ postalCode: string, coords: string } | null | undefined> => {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_472_CACHE, 'readonly');
+    const store = tx.objectStore(STORE_472_CACHE);
+    const req = store.get(key);
+    req.onsuccess = () => {
+      const res = req.result;
+      if (res) resolve(res.value);
+      else resolve(undefined);
+    };
+    req.onerror = () => resolve(undefined);
+  });
+};
+
+const saveCachedOfficial = async (key: string, value: { postalCode: string, coords: string } | null) => {
+  const db = await openDB();
+  return new Promise<void>((resolve) => {
+    const tx = db.transaction(STORE_472_CACHE, 'readwrite');
+    const store = tx.objectStore(STORE_472_CACHE);
+    store.put({ key, value });
+    tx.oncomplete = () => resolve();
+  });
 };
 
 /* 
@@ -1378,17 +1435,34 @@ export const processTemplateBatch = async (
                       await sleep(minDelay - timeSinceLastRequest);
                   }
                   lastRequestTime.value = Date.now();
-                  const recipient = String(row['Destinatario'] || row['destinatario'] || '').trim();
-                  const rowTimeoutMs = 8000;
-                  const timeoutPromise = new Promise<{ postalCode: string, coords: string, localidad?: string }>((resolveTimeout) => {
-                      setTimeout(() => resolveTimeout({ postalCode: "DIR_NO_ENCONTRADA", coords: "" }), rowTimeoutMs);
-                  });
-                  const res = await Promise.race([
-                      resolveSingleAddress({ dane, city, department, address, recipient }, db, zonesByMuni),
-                      timeoutPromise
-                  ]);
+              const recipient = String(row['Destinatario'] || row['destinatario'] || '').trim();
+              const rowTimeoutMs = 12000;
+              const timeoutPromise = new Promise<{ postalCode: string, coords: string, localidad?: string }>((resolveTimeout) => {
+                setTimeout(() => resolveTimeout({ postalCode: "DIR_NO_ENCONTRADA", coords: "" }), rowTimeoutMs);
+              });
+              let res: { postalCode: string, coords: string, localidad?: string } = { postalCode: '', coords: '' };
+              const cacheKey = `${normalizeStr(address)}|${normalizeStr(city)}|${normalizeStr(department)}`;
+              if (useOfficialAPI()) {
+                const cached = await getCachedOfficial(cacheKey);
+                if (cached !== undefined) {
+                  res = { postalCode: cached?.postalCode || 'DIR_NO_ENCONTRADA', coords: cached?.coords || '' };
+                } else {
+                  const fromApi = await fetchOfficialPostal(address, city, department);
+                  if (fromApi) {
+                    await saveCachedOfficial(cacheKey, fromApi);
+                    res = { postalCode: fromApi.postalCode, coords: fromApi.coords };
+                  } else {
+                    await saveCachedOfficial(cacheKey, null);
+                    res = await timeoutPromise;
+                  }
+                }
+              } else {
+                res = await Promise.race([
+                  resolveSingleAddress({ dane, city, department, address, recipient }, db, zonesByMuni),
+                  timeoutPromise
+                ]);
+              }
                   
-                  // Check if result is valid postal code (not error status)
                   const isValidPostalCode = res.postalCode && 
                                            res.postalCode.length <= 6 && 
                                            !res.postalCode.includes('ERROR') &&
@@ -1513,16 +1587,35 @@ export const processTemplateTurbo = async (
     }
 
     const recipient = String(row['Destinatario'] || row['destinatario'] || '').trim();
-    const resolved = await resolveSingleAddress({
-      dane,
-      city,
-      department,
-      address,
-      recipient
-    }, db, zonesByMuni);
-    const cp = resolved.postalCode;
-    const coords = resolved.coords;
-    const localidad = resolved.localidad || '';
+    let cp = '';
+    let coords = '';
+    let localidad = '';
+    const cacheKey = `${normalizeStr(address)}|${normalizeStr(city)}|${normalizeStr(department)}`;
+    if (useOfficialAPI()) {
+      const cached = await getCachedOfficial(cacheKey);
+      if (cached !== undefined && cached !== null) {
+        cp = cached.postalCode;
+        coords = cached.coords;
+      } else if (cached === undefined) {
+        const apiRes = await fetchOfficialPostal(address, city, department);
+        if (apiRes) {
+          cp = apiRes.postalCode;
+          coords = apiRes.coords;
+          await saveCachedOfficial(cacheKey, apiRes);
+        } else {
+          await saveCachedOfficial(cacheKey, null);
+          cp = 'DIR_NO_ENCONTRADA';
+          coords = '';
+        }
+      } else {
+        cp = 'DIR_NO_ENCONTRADA';
+      }
+    } else {
+      const resolved = await resolveSingleAddress({ dane, city, department, address, recipient }, db, zonesByMuni);
+      cp = resolved.postalCode;
+      coords = resolved.coords;
+      localidad = resolved.localidad || '';
+    }
 
     results[i] = {
       id: `tmpl-fast-${i+1}`,
@@ -1545,21 +1638,34 @@ export const processTemplateTurbo = async (
 };
 
 export const reprocessSingleRow = async (item: AddressTemplate): Promise<AddressTemplate> => {
-    const db = await getAllPostalZones();
-    const recipient = String((item as any)?.originalData?.Destinatario || (item as any)?.originalData?.destinatario || '').trim();
-    const result = await resolveSingleAddress({
-        dane: item.dane_destino,
-        city: item.ciudad_destino,
-        department: item.departamento_destino || '',
-        address: item.direccion,
-        recipient
-    }, db);
-
-    return {
-        ...item,
-        codigo_postal_asignado: result.postalCode,
-        coordenadas: result.coords
-    };
+  const db = await getAllPostalZones();
+  const recipient = String((item as any)?.originalData?.Destinatario || (item as any)?.originalData?.destinatario || '').trim();
+  let postalCode = '';
+  let coords = '';
+  if (useOfficialAPI()) {
+    const cacheKey = `${normalizeStr(item.direccion)}|${normalizeStr(item.ciudad_destino)}|${normalizeStr(item.departamento_destino || '')}`;
+    const cached = await getCachedOfficial(cacheKey);
+    if (cached !== undefined) {
+      postalCode = cached?.postalCode || 'DIR_NO_ENCONTRADA';
+      coords = cached?.coords || '';
+    } else {
+      const apiRes = await fetchOfficialPostal(item.direccion, item.ciudad_destino, item.departamento_destino || '');
+      if (apiRes) {
+        await saveCachedOfficial(cacheKey, apiRes);
+        postalCode = apiRes.postalCode;
+        coords = apiRes.coords;
+      } else {
+        await saveCachedOfficial(cacheKey, null);
+        postalCode = 'DIR_NO_ENCONTRADA';
+        coords = '';
+      }
+    }
+  } else {
+    const result = await resolveSingleAddress({ dane: item.dane_destino, city: item.ciudad_destino, department: item.departamento_destino || '', address: item.direccion, recipient }, db);
+    postalCode = result.postalCode;
+    coords = result.coords;
+  }
+  return { ...item, codigo_postal_asignado: postalCode, coordenadas: coords };
 };
 
 export const searchPlaces = async (query: string, filter: 'all' | 'cp' | 'muni' = 'all'): Promise<any[]> => {
