@@ -698,7 +698,7 @@ const ProcessorView: React.FC = () => {
     <div className="max-w-6xl mx-auto h-[calc(100vh-8rem)] flex flex-col space-y-4 relative">
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 flex-shrink-0">
         <h2 className="text-xl font-bold text-slate-800 flex items-center mb-2">
-          <FileSpreadsheet className="mr-2 text-blue-600" />
+          <FileSpreadsheet className="mr-2 text-brand-500" />
           Procesador de Plantilla (Reporteador)
         </h2>
         
@@ -709,19 +709,19 @@ const ProcessorView: React.FC = () => {
         {status === ProcessStatus.PROCESSING && (
             <div className="mb-4">
               <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-semibold text-blue-600">Procesando registros...</span>
-                    <span className="text-xs font-bold text-blue-600">{progress}%</span>
+                    <span className="text-xs font-semibold text-brand-500">Procesando registros...</span>
+                    <span className="text-xs font-bold text-brand-500">{progress}%</span>
               </div>
               <div className="w-full bg-slate-200 rounded-full h-2.5">
-                  <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out" style={{ width: `${progress}%` }}></div>
+                  <div className="bg-brand-500 h-2.5 rounded-full transition-all duration-300 ease-out" style={{ width: `${progress}%` }}></div>
               </div>
               <div className="flex justify-between items-center mt-1">
                  <span className="text-[10px] text-slate-500">Velocidad: {speed.toFixed(1)}%/s</span>
                  <span className="text-[10px] text-slate-500">ETA: {eta || 'calculando...'}</span>
               </div>
-              <div className="mt-2 w-full h-1 bg-gradient-to-r from-blue-200 via-blue-300 to-blue-200 animate-pulse rounded"></div>
+              <div className="mt-2 w-full h-1 bg-gradient-to-r from-brand-100 via-brand-200 to-brand-100 animate-pulse rounded"></div>
               {pauseUntil && Date.now() < pauseUntil && (
-                <div className="mt-2 text-xs bg-yellow-50 border border-yellow-200 text-yellow-800 rounded px-2 py-1">
+                <div className="mt-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded px-2 py-1">
                   Límite de API alcanzado, reanudando en {Math.max(0, Math.ceil((pauseUntil - Date.now())/1000))} segundos...
                 </div>
               )}
@@ -730,7 +730,7 @@ const ProcessorView: React.FC = () => {
 
         <div className="flex flex-col md:flex-row gap-3 items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
             <div className="flex-1 w-full">
-               <label className="flex items-center justify-center w-full px-4 py-2 border-2 border-dashed border-slate-300 rounded-md cursor-pointer hover:border-blue-400 hover:bg-white transition-colors bg-white">
+               <label className="flex items-center justify-center w-full px-4 py-2 border-2 border-dashed border-slate-300 rounded-md cursor-pointer hover:border-brand-400 hover:bg-white transition-colors bg-white">
                   <Upload className="h-4 w-4 text-slate-400 mr-2" />
                   <span className="text-sm font-medium text-slate-600 truncate max-w-[200px] md:max-w-xs">
                     {fileName ? fileName : "Cargar Plantilla Reporteador.xlsx"}
@@ -748,8 +748,8 @@ const ProcessorView: React.FC = () => {
                   disabled={data.length === 0 || status === ProcessStatus.PROCESSING}
                   className={`flex-1 md:flex-none px-4 py-2 rounded-md font-medium text-sm flex items-center justify-center space-x-2 transition-all ${
                     data.length === 0 ? 'bg-slate-200 text-slate-400 cursor-not-allowed' :
-                    status === ProcessStatus.PROCESSING ? 'bg-blue-700 text-white cursor-wait' :
-                    'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                    status === ProcessStatus.PROCESSING ? 'bg-brand-600 text-white cursor-wait' :
+                    'bg-brand-500 text-white hover:bg-brand-600 shadow-sm'
                   }`}
                 >
                   {status === ProcessStatus.PROCESSING ? (
@@ -928,7 +928,7 @@ const ProcessorView: React.FC = () => {
                                     <button 
                                         onClick={() => openEditModal(row)}
                                         title="Editar Dirección Manualmente"
-                                        className="text-slate-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-blue-50"
+                                        className="text-slate-400 hover:text-brand-600 transition-colors p-1 rounded hover:bg-brand-50"
                                     >
                                         <Pencil size={14} />
                                     </button>
@@ -960,7 +960,7 @@ const ProcessorView: React.FC = () => {
                                 ? 'text-orange-600 bg-orange-50'
                                 : errorCP
                                     ? 'text-red-500 bg-red-50'
-                                    : 'text-blue-600 bg-yellow-50'
+                                    : 'text-brand-600 bg-yellow-50'
                             }`}>
                             {cpDisplay || "---"}
                             </td>
@@ -979,7 +979,7 @@ const ProcessorView: React.FC = () => {
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-200">
                   <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-center">
                       <h3 className="font-bold text-slate-800 flex items-center">
-                          <Pencil size={16} className="mr-2 text-blue-600" />
+                          <Pencil size={16} className="mr-2 text-brand-600" />
                           Corregir Dirección
                       </h3>
                       <button onClick={closeEditModal} className="text-slate-400 hover:text-slate-600">
@@ -991,7 +991,7 @@ const ProcessorView: React.FC = () => {
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dirección</label>
                           <input 
                               type="text" 
-                              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                               value={editForm.address}
                               onChange={e => setEditForm({...editForm, address: e.target.value})}
                           />
@@ -1001,7 +1001,7 @@ const ProcessorView: React.FC = () => {
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ciudad</label>
                               <input 
                                   type="text" 
-                                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                                   value={editForm.city}
                                   onChange={e => setEditForm({...editForm, city: e.target.value})}
                               />
@@ -1010,7 +1010,7 @@ const ProcessorView: React.FC = () => {
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Departamento</label>
                               <input 
                                   type="text" 
-                                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                                   value={editForm.dept}
                                   onChange={e => setEditForm({...editForm, dept: e.target.value})}
                                   placeholder="(Opcional)"
@@ -1020,7 +1020,7 @@ const ProcessorView: React.FC = () => {
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">DANE</label>
                               <input 
                                   type="text" 
-                                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                                   value={editForm.dane}
                                   onChange={e => setEditForm({...editForm, dane: e.target.value})}
                               />
@@ -1040,7 +1040,7 @@ const ProcessorView: React.FC = () => {
                       <button 
                           onClick={handleSaveEdit}
                           disabled={isRetrying}
-                          className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm flex items-center"
+                          className="px-4 py-2 text-sm font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-md shadow-sm flex items-center"
                       >
                           {isRetrying ? <Loader2 size={14} className="animate-spin mr-2" /> : <Save size={14} className="mr-2" />}
                           Guardar y Re-procesar

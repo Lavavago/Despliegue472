@@ -78,14 +78,14 @@ const Login: React.FC<LoginProps> = ({ onSuccess }) => {
         
         <div className="flex flex-col items-center mb-4">
           <img src={gleRojo} alt="Logo" className="h-56 w-56 object-contain mb-0" />
-          <div className="text-blue-600 -mt-12">
+          <div className="text-brand-600 -mt-12">
             <svg width="170" height="58" viewBox="0 0 170 58" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="8" y="24" width="28" height="4" rx="2" fill="#2563eb" />
-              <rect x="134" y="24" width="28" height="4" rx="2" fill="#2563eb" />
-              <text x="85" y="28" textAnchor="middle" fontFamily="Inter, system-ui" fontWeight="800" fontSize="34" fill="#2563eb">472</text>
+              <rect x="8" y="24" width="28" height="4" rx="2" fill="#e30613" />
+              <rect x="134" y="24" width="28" height="4" rx="2" fill="#e30613" />
+              <text x="85" y="28" textAnchor="middle" fontFamily="Inter, system-ui" fontWeight="800" fontSize="34" fill="#e30613">472</text>
             </svg>
           </div>
-          <p className="text-xs font-bold text-blue-600 tracking-wider uppercase -mt-1">ColPostal</p>
+          <p className="text-xs font-bold text-brand-600 tracking-wider uppercase -mt-1">ColPostal</p>
           <p className="text-sm text-slate-500 mt-1">Ingresa tus credenciales de acceso</p>
         </div>
 
@@ -99,7 +99,7 @@ const Login: React.FC<LoginProps> = ({ onSuccess }) => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Correo corporativo"
-              className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
               required
             />
           </div>
@@ -113,7 +113,7 @@ const Login: React.FC<LoginProps> = ({ onSuccess }) => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Contraseña"
-              className="block w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              className="block w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
               required
             />
             <button
@@ -133,7 +133,7 @@ const Login: React.FC<LoginProps> = ({ onSuccess }) => {
                 onClick={() => selectRole(r)}
                 className={`px-3 py-2 rounded-md text-sm font-medium border transition-all ${
                   role === r
-                    ? 'bg-blue-600 text-white border-blue-600'
+                    ? 'bg-brand-600 text-white border-brand-600'
                     : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                 }`}
               >
@@ -150,7 +150,7 @@ const Login: React.FC<LoginProps> = ({ onSuccess }) => {
 
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white rounded-md py-2 text-sm font-bold hover:bg-blue-700 transition-colors"
+            className="w-full bg-brand-600 text-white rounded-md py-2 text-sm font-bold hover:bg-brand-700 transition-colors"
           >
             INICIAR SESIÓN
           </button>

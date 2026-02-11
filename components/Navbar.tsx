@@ -25,7 +25,7 @@ const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, onLogout, onCha
           <div className="flex items-center space-x-2">
             <button
               onClick={onLogout}
-              className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+              className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-brand-50 text-brand-700 border border-brand-200 hover:bg-brand-100"
             >
               <ArrowLeft className="mr-1 h-4 w-4" />
               Devolver
@@ -41,7 +41,7 @@ const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, onLogout, onCha
                 onClick={() => onTabChange('database')}
                 className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                   activeTab === 'database' 
-                    ? 'bg-white text-blue-700 shadow-sm border border-slate-200' 
+                    ? 'bg-white text-brand-700 shadow-sm border border-slate-200' 
                     : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
                 }`}
               >
@@ -52,7 +52,7 @@ const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, onLogout, onCha
                 onClick={() => onTabChange('processor')}
                 className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                   activeTab === 'processor' 
-                    ? 'bg-white text-blue-700 shadow-sm border border-slate-200' 
+                    ? 'bg-white text-brand-700 shadow-sm border border-slate-200' 
                     : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
                 }`}
               >
@@ -63,7 +63,7 @@ const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, onLogout, onCha
                 onClick={() => onTabChange('map')}
                 className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                   activeTab === 'map' 
-                    ? 'bg-white text-blue-700 shadow-sm border border-slate-200' 
+                    ? 'bg-white text-brand-700 shadow-sm border border-slate-200' 
                     : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
                 }`}
               >
