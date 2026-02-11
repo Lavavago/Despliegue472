@@ -269,6 +269,73 @@ const extractJSON = (text: string): any => {
 
 /* 
   =============================================================================
+  GOOGLE ADDRESS VALIDATION API
+  =============================================================================
+*/
+
+const validateAddressWithGoogle = async (address: string, city: string, department: string): Promise<{ postalCode: string, lat: number, lon: number } | null> => {
+  const apiKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY;
+  const enabled = ((import.meta as any).env.VITE_ENABLE_GOOGLE === '1');
+  if (!enabled || !apiKey || apiKey === 'demo_key_for_testing') return null;
+
+  try {
+    const fullAddress = `${address}, ${city}, ${department}, Colombia`;
+    const url = `https://addressvalidation.googleapis.com/v1:validateAddress?key=${apiKey}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        address: {
+          addressLines: [address],
+          locality: city,
+          administrativeArea: department,
+          regionCode: 'CO'
+        }
+      })
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    
+    const result = data.result;
+    if (!result || !result.address) return null;
+
+    // Extract postal code from address components
+    const postalCodeComponent = result.address.addressComponents?.find((c: any) => 
+      c.componentType === 'postal_code'
+    );
+    
+    const postalCode = postalCodeComponent?.componentName?.text || '';
+    const location = result.geocode?.location;
+    
+    if (postalCode && postalCode.length === 6) {
+      return {
+        postalCode,
+        lat: location?.latitude || 0,
+        lon: location?.longitude || 0
+      };
+    }
+    
+    // If not in components, try to find it in the postalAddress object
+    const postalCodeAlt = result.address.postalAddress?.postalCode || '';
+    if (postalCodeAlt && postalCodeAlt.length === 6) {
+      return {
+        postalCode: postalCodeAlt,
+        lat: location?.latitude || 0,
+        lon: location?.longitude || 0
+      };
+    }
+
+    return null;
+  } catch (e) {
+    console.warn('Google Address Validation failed:', e);
+    return null;
+  }
+};
+
+/* 
+  =============================================================================
   GEOMETRY LOGIC
   =============================================================================
 */
@@ -1442,7 +1509,16 @@ export const processTemplateBatch = async (
               });
               let res: { postalCode: string, coords: string, localidad?: string } = { postalCode: '', coords: '' };
               const cacheKey = `${normalizeStr(address)}|${normalizeStr(city)}|${normalizeStr(department)}`;
-              if (useOfficialAPI()) {
+              
+              // Try Google Address Validation API first for high precision
+              const googleRes = await validateAddressWithGoogle(address, city, department);
+              if (googleRes) {
+                res = { 
+                  postalCode: googleRes.postalCode, 
+                  coords: `${googleRes.lat}, ${googleRes.lon}` 
+                };
+                await saveCachedOfficial(cacheKey, { postalCode: res.postalCode, coords: res.coords });
+              } else if (useOfficialAPI()) {
                 const cached = await getCachedOfficial(cacheKey);
                 if (cached !== undefined) {
                   res = { postalCode: cached?.postalCode || 'DIR_NO_ENCONTRADA', coords: cached?.coords || '' };
@@ -1591,7 +1667,14 @@ export const processTemplateTurbo = async (
     let coords = '';
     let localidad = '';
     const cacheKey = `${normalizeStr(address)}|${normalizeStr(city)}|${normalizeStr(department)}`;
-    if (useOfficialAPI()) {
+    
+    // Try Google Address Validation API first for high precision
+    const googleRes = await validateAddressWithGoogle(address, city, department);
+    if (googleRes) {
+      cp = googleRes.postalCode;
+      coords = `${googleRes.lat}, ${googleRes.lon}`;
+      await saveCachedOfficial(cacheKey, { postalCode: cp, coords });
+    } else if (useOfficialAPI()) {
       const cached = await getCachedOfficial(cacheKey);
       if (cached !== undefined && cached !== null) {
         cp = cached.postalCode;
@@ -1642,8 +1725,15 @@ export const reprocessSingleRow = async (item: AddressTemplate): Promise<Address
   const recipient = String((item as any)?.originalData?.Destinatario || (item as any)?.originalData?.destinatario || '').trim();
   let postalCode = '';
   let coords = '';
-  if (useOfficialAPI()) {
-    const cacheKey = `${normalizeStr(item.direccion)}|${normalizeStr(item.ciudad_destino)}|${normalizeStr(item.departamento_destino || '')}`;
+  const cacheKey = `${normalizeStr(item.direccion)}|${normalizeStr(item.ciudad_destino)}|${normalizeStr(item.departamento_destino || '')}`;
+  
+  // Try Google Address Validation API first for high precision
+  const googleRes = await validateAddressWithGoogle(item.direccion, item.ciudad_destino, item.departamento_destino || '');
+  if (googleRes) {
+    postalCode = googleRes.postalCode;
+    coords = `${googleRes.lat}, ${googleRes.lon}`;
+    await saveCachedOfficial(cacheKey, { postalCode, coords });
+  } else if (useOfficialAPI()) {
     const cached = await getCachedOfficial(cacheKey);
     if (cached !== undefined) {
       postalCode = cached?.postalCode || 'DIR_NO_ENCONTRADA';

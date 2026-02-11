@@ -153,7 +153,7 @@ const DatabaseView: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
           <div>
             <h2 className="text-xl font-bold text-slate-800 flex items-center">
-              <Database className="mr-2 text-blue-600" />
+              <Database className="mr-2 text-brand-600" />
               Base Maestra de Códigos Postales
             </h2>
             <p className="text-sm text-slate-500 mt-1">
@@ -183,7 +183,7 @@ const DatabaseView: React.FC = () => {
             href="https://www.datos.gov.co/Ordenamiento-Territorial/C-digos-Postales-Nacionales/ixig-z8b5/about_data" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-xs bg-blue-50 text-blue-700 px-3 py-2 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors flex items-center"
+            className="text-xs bg-brand-50 text-brand-700 px-3 py-2 rounded-lg border border-brand-100 hover:bg-brand-100 transition-colors flex items-center"
           >
             <ExternalLink className="w-3 h-3 mr-1.5" />
             Descargar Shapefile Oficial
@@ -215,14 +215,14 @@ const DatabaseView: React.FC = () => {
 
           {/* Loading Indicator (Overlays both upload buttons if loading) */}
           {loading ? (
-             <div className="md:col-span-9 border-2 border-dashed border-blue-300 bg-blue-50/50 rounded-lg p-2 flex flex-col items-center justify-center min-h-[110px]">
+             <div className="md:col-span-9 border-2 border-dashed border-brand-300 bg-brand-50/50 rounded-lg p-2 flex flex-col items-center justify-center min-h-[110px]">
                 <div className="w-full px-4 text-center">
-                    <div className="flex items-center justify-center mb-1 text-blue-600">
+                    <div className="flex items-center justify-center mb-1 text-brand-600">
                         <RefreshCw className="animate-spin h-5 w-5 mr-2" />
                         <span className="text-xs font-bold">{progress}%</span>
                     </div>
                     <div className="w-full bg-slate-200 rounded-full h-1.5 mb-1">
-                      <div className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
+                      <div className="bg-brand-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
                     </div>
                     <p className="text-[10px] text-slate-500 truncate">{progressMsg}</p>
                 </div>
@@ -230,13 +230,13 @@ const DatabaseView: React.FC = () => {
           ) : (
             <>
               {/* Upload Shapefile */}
-              <div className="md:col-span-6 border-2 border-dashed border-blue-200 bg-blue-50/30 rounded-lg p-2 flex flex-col items-center justify-center hover:bg-blue-50 transition-colors relative group min-h-[110px]">
+              <div className="md:col-span-6 border-2 border-dashed border-brand-200 bg-brand-50/30 rounded-lg p-2 flex flex-col items-center justify-center hover:bg-brand-50 transition-colors relative group min-h-[110px]">
                 <label className="cursor-pointer flex flex-col items-center justify-center h-full w-full">
                   <div className="bg-white p-2 rounded-full shadow-sm mb-1 group-hover:scale-110 transition-transform">
-                      <FileArchive className="w-5 h-5 text-blue-600" />
+                      <FileArchive className="w-5 h-5 text-brand-600" />
                   </div>
-                  <span className="text-xs font-bold text-blue-700">1. Cargar Shapefile Geográfico (.zip)</span>
-                  <p className="text-[10px] text-blue-400 mt-0.5 text-center px-2">Importa los polígonos y la ubicación</p>
+                  <span className="text-xs font-bold text-brand-700">1. Cargar Shapefile Geográfico (.zip)</span>
+                  <p className="text-[10px] text-brand-400 mt-0.5 text-center px-2">Importa los polígonos y la ubicación</p>
               <input type="file" className="hidden" accept=".zip" onChange={handleShapefileUpload} />
               </label>
               </div>
@@ -312,14 +312,14 @@ const DatabaseView: React.FC = () => {
             <input 
                 type="text" 
                 placeholder="Buscar C.P., Municipio o Depto..." 
-                className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400" 
+                className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all placeholder:text-slate-400" 
                 value={searchQuery} 
                 onChange={(e) => setSearchQuery(e.target.value)} 
             />
           </div>
           <div className="flex items-center space-x-3 text-sm text-slate-600">
              <span className="text-xs font-medium text-slate-400 uppercase">Filas:</span>
-             <select className="border border-slate-300 bg-white rounded-md p-1.5 text-slate-700 text-xs focus:ring-blue-500 focus:border-blue-500" value={itemsPerPage} onChange={(e) => setItemsPerPage(Number(e.target.value))}>
+             <select className="border border-slate-300 bg-white rounded-md p-1.5 text-slate-700 text-xs focus:ring-brand-500 focus:border-brand-500" value={itemsPerPage} onChange={(e) => setItemsPerPage(Number(e.target.value))}>
                <option value={20}>20</option><option value={50}>50</option><option value={100}>100</option><option value={200}>200</option>
              </select>
           </div>
@@ -339,10 +339,10 @@ const DatabaseView: React.FC = () => {
               <tbody className="bg-white divide-y divide-slate-50">
                 {result.data.length > 0 ? (
                   result.data.map((row) => (
-                    <tr key={row.id} className="hover:bg-blue-50/30 transition-colors group">
+                    <tr key={row.id} className="hover:bg-brand-50/30 transition-colors group">
                       <td className="px-4 py-2 text-slate-300 text-xs font-mono">{row.id.replace('feat-','')}</td>
                       <td className="px-4 py-2">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 font-mono">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-800 font-mono">
                             {row.codigo_postal}
                           </span>
                       </td>

@@ -89,7 +89,7 @@ const App: React.FC = () => {
                       spellCheck={false}
                       autoCapitalize="off"
                       autoCorrect="off"
-                      className="block w-full px-3 pr-10 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      className="block w-full px-3 pr-10 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
                     />
                     <button
                       type="button"
@@ -111,7 +111,7 @@ const App: React.FC = () => {
                       spellCheck={false}
                       autoCapitalize="off"
                       autoCorrect="off"
-                      className="block w-full px-3 pr-10 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      className="block w-full px-3 pr-10 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
                     />
                     <button
                       type="button"
@@ -133,7 +133,7 @@ const App: React.FC = () => {
                       spellCheck={false}
                       autoCapitalize="off"
                       autoCorrect="off"
-                      className="block w-full px-3 pr-10 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      className="block w-full px-3 pr-10 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
                     />
                     <button
                       type="button"
@@ -195,7 +195,7 @@ const App: React.FC = () => {
                       }
                       setPwdSuccess('Contraseña actualizada correctamente.');
                     }}
-                    className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                    className="px-3 py-2 text-sm rounded-md bg-brand-600 text-white hover:bg-brand-700"
                   >
                     Guardar
                   </button>

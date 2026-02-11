@@ -493,12 +493,16 @@ const ProcessorView: React.FC = () => {
 
     const out: Record<string, any>[] = rows.map(d => {
       const original: Record<string, any> = { ...(d.originalData || {}) };
+      // Mantener el Código Postal original si existe
+      let originalCP = '';
       const cpAliases = ['código postal','codigo postal','Código postal','Codigo postal','cp','CP'];
       Object.keys(original).forEach(k => {
-        if (cpAliases.includes(k)) delete original[k as any];
-        const kl = k.toLowerCase();
-        if (cpAliases.includes(kl)) delete original[k as any];
+        if (cpAliases.includes(k)) {
+          originalCP = original[k];
+          // No eliminamos la columna original para mantenerla en el reporte
+        }
       });
+
       const daneOrigenOut = String(original['DANE origen'] ?? '').padStart(5, '0');
       const daneDestinoOut = String(d.dane_destino ?? original['DANE destino'] ?? '').padStart(5, '0');
       let cp = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
@@ -571,7 +575,7 @@ const ProcessorView: React.FC = () => {
         'DANE origen': String(daneOrigenOut),
         'DANE destino': String(daneDestinoOut),
         'Ciudad de destino': cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino),
-        'Código Postal 472': String(cpFinal),
+        'CODIGO POSTAL 472 (API)': String(cpFinal),
         'Valor declarado': valorDeclarado,
         'Localidad': d.localidad_detectada || '',
         'Coordenada': coordsFinal
