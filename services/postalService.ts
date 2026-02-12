@@ -273,13 +273,18 @@ const extractJSON = (text: string): any => {
   =============================================================================
 */
 
-const validateAddressWithGoogle = async (address: string, city: string, department: string): Promise<{ postalCode: string, lat: number, lon: number } | null> => {
+const validateAddressWithGoogle = async (address: string, city: string, department: string): Promise<{ 
+  postalCode: string, 
+  lat: number, 
+  lon: number,
+  formattedAddress: string,
+  locationName: string 
+} | null> => {
   const apiKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY;
   const enabled = ((import.meta as any).env.VITE_ENABLE_GOOGLE === '1');
   if (!enabled || !apiKey || apiKey === 'demo_key_for_testing') return null;
 
   try {
-    const fullAddress = `${address}, ${city}, ${department}, Colombia`;
     const url = `https://addressvalidation.googleapis.com/v1:validateAddress?key=${apiKey}`;
     
     const response = await fetch(url, {
@@ -301,29 +306,62 @@ const validateAddressWithGoogle = async (address: string, city: string, departme
     const result = data.result;
     if (!result || !result.address) return null;
 
-    // Extract postal code from address components
-    const postalCodeComponent = result.address.addressComponents?.find((c: any) => 
+    // 1. Dirección Normalizada (Prioridad: completeAddress -> formattedAddress -> original)
+    // Se captura la nomenclatura oficial corregida por Google para auditoría
+    let formattedAddress = result.address.completeAddress || 
+                           result.address.postalAddress?.addressLines?.join(', ') || 
+                           address;
+
+    // 2. Localidad/Barrio con jerarquía de respaldo (fallback)
+    let locationName = '';
+    const components = result.address.addressComponents || [];
+    
+    // Prioridad 1: sublocality o neighborhood
+    const sublocality = components.find((c: any) => 
+      c.componentType === 'sublocality' || c.componentType === 'sublocality_level_1'
+    );
+    const neighborhood = components.find((c: any) => 
+      c.componentType === 'neighborhood'
+    );
+    
+    // Prioridad 2: locality (Ciudad/Municipio)
+    const locality = components.find((c: any) => 
+      c.componentType === 'locality'
+    );
+    
+    // Prioridad 3: administrative_area_level_2 (Provincia/Estado)
+    const adminArea2 = components.find((c: any) => 
+      c.componentType === 'administrative_area_level_2'
+    );
+
+    locationName = sublocality?.componentName?.text || 
+                   neighborhood?.componentName?.text || 
+                   locality?.componentName?.text || 
+                   adminArea2?.componentName?.text || 
+                   city; // Prioridad 4: Ciudad de Destino original
+
+    // 3. Código Postal (postalCode de 6 dígitos)
+    const postalCodeComponent = components.find((c: any) => 
       c.componentType === 'postal_code'
     );
     
-    const postalCode = postalCodeComponent?.componentName?.text || '';
+    let postalCode = postalCodeComponent?.componentName?.text || '';
     const location = result.geocode?.location;
+    
+    if (!postalCode || postalCode.length !== 6) {
+      const postalCodeAlt = result.address.postalAddress?.postalCode || '';
+      if (postalCodeAlt && postalCodeAlt.length === 6) {
+        postalCode = postalCodeAlt;
+      }
+    }
     
     if (postalCode && postalCode.length === 6) {
       return {
         postalCode,
         lat: location?.latitude || 0,
-        lon: location?.longitude || 0
-      };
-    }
-    
-    // If not in components, try to find it in the postalAddress object
-    const postalCodeAlt = result.address.postalAddress?.postalCode || '';
-    if (postalCodeAlt && postalCodeAlt.length === 6) {
-      return {
-        postalCode: postalCodeAlt,
-        lat: location?.latitude || 0,
-        lon: location?.longitude || 0
+        lon: location?.longitude || 0,
+        formattedAddress,
+        locationName
       };
     }
 
@@ -1055,7 +1093,13 @@ const resolveSingleAddress = async (
     row: { dane: string, city: string, department: string, address: string, recipient?: string }, 
     db: PostalZone[], 
     zonesByMuni?: Record<string, PostalZone[]>
-): Promise<{ postalCode: string, coords: string, localidad?: string }> => {
+): Promise<{ 
+    postalCode: string, 
+    coords: string, 
+    localidad?: string,
+    direccion_google?: string,
+    locationName?: string 
+}> => {
     
     let localZonesByMuni = zonesByMuni;
     if (!localZonesByMuni) {
@@ -1071,6 +1115,27 @@ const resolveSingleAddress = async (
     let foundPostalCode = "SIN_COBERTURA";
     let foundCoords = "";
     let foundLocalidad = "";
+    let direccionGoogle = address; // Default to original address
+    let locationName = city; // Default to original city
+
+    // Strategy 0: Try Google Address Validation API first if enabled
+    const googleResult = await validateAddressWithGoogle(address, city, department);
+    if (googleResult) {
+        foundPostalCode = googleResult.postalCode;
+        foundCoords = `${googleResult.lat}, ${googleResult.lon}`;
+        direccionGoogle = googleResult.formattedAddress;
+        locationName = googleResult.locationName;
+        foundLocalidad = googleResult.locationName; // Also set as localidad for internal use
+        
+        console.log(`[GOOGLE] Address validated: ${direccionGoogle}, CP: ${foundPostalCode}`);
+        return { 
+            postalCode: foundPostalCode, 
+            coords: foundCoords, 
+            localidad: foundLocalidad,
+            direccion_google: direccionGoogle,
+            locationName: locationName
+        };
+    }
 
     // Validate input
     if (!city && !address) {
@@ -1186,14 +1251,25 @@ const resolveSingleAddress = async (
             }
             foundPostalCode = selectedCP;
             console.log(`[LOOKUP] DANE ${dane} → ${selectedCP}`);
-            return { postalCode: foundPostalCode, coords: foundCoords, localidad: foundLocalidad };
+            return { 
+                postalCode: foundPostalCode, 
+                coords: foundCoords, 
+                localidad: foundLocalidad,
+                direccion_google: direccionGoogle,
+                locationName: locationName
+            };
         }
     }
 
     // If still no candidates found, log warning
     if (zonesToCheck.length === 0 && (city || dane)) {
         console.warn(`[DEBUG] No zones found for city="${city}" or dane="${dane}". Database has ${db.length} total zones.`);
-        return { postalCode: "MUNICIPIO_SIN_ZONAS", coords: "" };
+        return { 
+            postalCode: "MUNICIPIO_SIN_ZONAS", 
+            coords: "",
+            direccion_google: direccionGoogle,
+            locationName: locationName
+        };
     }
     
     // Strategy 3: Geocode address and match against zones
@@ -1391,7 +1467,13 @@ const resolveSingleAddress = async (
         foundPostalCode = foundPostalCode.padStart(6, '0');
     }
 
-    return { postalCode: foundPostalCode, coords: foundCoords, localidad: foundLocalidad || undefined };
+    return { 
+        postalCode: foundPostalCode, 
+        coords: foundCoords, 
+        localidad: foundLocalidad || undefined,
+        direccion_google: direccionGoogle,
+        locationName: locationName
+    };
 };
 
 // ADAPTIVE QUEUE PROCESSOR WITH ABORT SIGNAL
@@ -1504,10 +1586,27 @@ export const processTemplateBatch = async (
                   lastRequestTime.value = Date.now();
               const recipient = String(row['Destinatario'] || row['destinatario'] || '').trim();
               const rowTimeoutMs = 12000;
-              const timeoutPromise = new Promise<{ postalCode: string, coords: string, localidad?: string }>((resolveTimeout) => {
+              const timeoutPromise = new Promise<{ 
+                postalCode: string, 
+                coords: string, 
+                localidad?: string,
+                direccion_google?: string,
+                locationName?: string 
+              }>((resolveTimeout) => {
                 setTimeout(() => resolveTimeout({ postalCode: "DIR_NO_ENCONTRADA", coords: "" }), rowTimeoutMs);
               });
-              let res: { postalCode: string, coords: string, localidad?: string } = { postalCode: '', coords: '' };
+              let res: { 
+                postalCode: string, 
+                coords: string, 
+                localidad?: string,
+                direccion_google?: string,
+                locationName?: string 
+              } = { 
+                postalCode: '', 
+                coords: '',
+                direccion_google: address, // Default for auditability
+                locationName: city // Default for auditability
+              };
               const cacheKey = `${normalizeStr(address)}|${normalizeStr(city)}|${normalizeStr(department)}`;
               
               // Try Google Address Validation API first for high precision
@@ -1515,7 +1614,10 @@ export const processTemplateBatch = async (
               if (googleRes) {
                 res = { 
                   postalCode: googleRes.postalCode, 
-                  coords: `${googleRes.lat}, ${googleRes.lon}` 
+                  coords: `${googleRes.lat}, ${googleRes.lon}`,
+                  direccion_google: googleRes.formattedAddress,
+                  locationName: googleRes.locationName,
+                  localidad: googleRes.locationName
                 };
                 await saveCachedOfficial(cacheKey, { postalCode: res.postalCode, coords: res.coords });
               } else if (useOfficialAPI()) {
@@ -1560,7 +1662,8 @@ export const processTemplateBatch = async (
                       direccion: address, 
                       codigo_postal_asignado: res.postalCode,
                       coordenadas: res.coords,
-                      localidad_detectada: res.localidad || '',
+                      localidad_detectada: res.locationName || res.localidad || '',
+                      direccion_google: res.direccion_google || '',
                       originalData: { ...row, 'DANE destino': dane } 
                   };
                   
@@ -1665,14 +1768,18 @@ export const processTemplateTurbo = async (
     const recipient = String(row['Destinatario'] || row['destinatario'] || '').trim();
     let cp = '';
     let coords = '';
-    let localidad = '';
+    let localidad = city; // Default to city for auditability
     const cacheKey = `${normalizeStr(address)}|${normalizeStr(city)}|${normalizeStr(department)}`;
+    
+    let direccionGoogle = address; // Default to address for auditability
     
     // Try Google Address Validation API first for high precision
     const googleRes = await validateAddressWithGoogle(address, city, department);
     if (googleRes) {
       cp = googleRes.postalCode;
       coords = `${googleRes.lat}, ${googleRes.lon}`;
+      direccionGoogle = googleRes.formattedAddress;
+      localidad = googleRes.locationName;
       await saveCachedOfficial(cacheKey, { postalCode: cp, coords });
     } else if (useOfficialAPI()) {
       const cached = await getCachedOfficial(cacheKey);
@@ -1697,7 +1804,8 @@ export const processTemplateTurbo = async (
       const resolved = await resolveSingleAddress({ dane, city, department, address, recipient }, db, zonesByMuni);
       cp = resolved.postalCode;
       coords = resolved.coords;
-      localidad = resolved.localidad || '';
+      localidad = resolved.locationName || resolved.localidad || '';
+      direccionGoogle = resolved.direccion_google || '';
     }
 
     results[i] = {
@@ -1709,6 +1817,7 @@ export const processTemplateTurbo = async (
       codigo_postal_asignado: cp,
       coordenadas: coords,
       localidad_detectada: localidad,
+      direccion_google: direccionGoogle,
       originalData: { ...row, 'DANE destino': dane ? dane.padStart(5, '0').slice(-5) : '00000' }
     };
 
@@ -1727,11 +1836,16 @@ export const reprocessSingleRow = async (item: AddressTemplate): Promise<Address
   let coords = '';
   const cacheKey = `${normalizeStr(item.direccion)}|${normalizeStr(item.ciudad_destino)}|${normalizeStr(item.departamento_destino || '')}`;
   
+  let direccionGoogle = item.direccion_google || item.direccion || "";
+  let localidad = item.localidad_detectada || item.ciudad_destino || "";
+
   // Try Google Address Validation API first for high precision
   const googleRes = await validateAddressWithGoogle(item.direccion, item.ciudad_destino, item.departamento_destino || '');
   if (googleRes) {
     postalCode = googleRes.postalCode;
     coords = `${googleRes.lat}, ${googleRes.lon}`;
+    direccionGoogle = googleRes.formattedAddress;
+    localidad = googleRes.locationName;
     await saveCachedOfficial(cacheKey, { postalCode, coords });
   } else if (useOfficialAPI()) {
     const cached = await getCachedOfficial(cacheKey);
@@ -1754,8 +1868,16 @@ export const reprocessSingleRow = async (item: AddressTemplate): Promise<Address
     const result = await resolveSingleAddress({ dane: item.dane_destino, city: item.ciudad_destino, department: item.departamento_destino || '', address: item.direccion, recipient }, db);
     postalCode = result.postalCode;
     coords = result.coords;
+    direccionGoogle = result.direccion_google || "";
+    localidad = result.locationName || result.localidad || "";
   }
-  return { ...item, codigo_postal_asignado: postalCode, coordenadas: coords };
+  return { 
+    ...item, 
+    codigo_postal_asignado: postalCode, 
+    coordenadas: coords,
+    direccion_google: direccionGoogle,
+    localidad_detectada: localidad
+  };
 };
 
 export const searchPlaces = async (query: string, filter: 'all' | 'cp' | 'muni' = 'all'): Promise<any[]> => {

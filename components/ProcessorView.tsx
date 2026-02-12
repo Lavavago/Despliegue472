@@ -321,9 +321,18 @@ const ProcessorView: React.FC = () => {
     const exportRows = buildExportRows(data);
     const keySet = new Set<string>();
     exportRows.forEach(row => Object.keys(row).forEach(k => keySet.add(k)));
+    
+    // Orden Estricto de Columnas (Estructura Maestra)
     const preferredOrder = [
-      'DANE origen','DANE destino','Ciudad de destino','Departamento de destino','Dirección','Valor declarado',
-      'Código Postal 472','Localidad','Coordenada'
+      'DIRECCION ORIGINAL',
+      'DIRECCION GOOGLE',
+      'LOCALIDAD / BARRIO',
+      'CODIGO POSTAL ORIGINAL',
+      'CODIGO POSTAL 472 (API)',
+      'DANE ORIGEN',
+      'DANE DESTINO',
+      'CIUDAD DE DESTINO',
+      'COORDENADAS'
     ];
     const headers: string[] = [];
     preferredOrder.forEach(h => { if (keySet.has(h)) headers.push(h); });
@@ -341,7 +350,7 @@ const ProcessorView: React.FC = () => {
         const h = cell && String(cell.v || '');
         if (h) headerMap[h] = c;
       }
-      const forceText = ['DANE origen','DANE destino','Código Postal 472'];
+      const forceText = ['DANE ORIGEN','DANE DESTINO','CODIGO POSTAL ORIGINAL','CODIGO POSTAL 472 (API)'];
       for (const h of forceText) {
         const col = headerMap[h];
         if (col !== undefined) {
@@ -360,12 +369,21 @@ const ProcessorView: React.FC = () => {
   const buildExportCSV = (rows: AddressTemplate[]): string => {
     const exportData: Record<string, any>[] = rows.map(d => {
       const original: Record<string, any> = { ...(d.originalData || {}) };
+      
+      // Buscar el nombre exacto de la columna de dirección original
+      let originalAddr = '';
+      const addrAliases = ['dirección','direccion','Dirección','Direccion','ADDRESS','Address'];
+      Object.keys(original).forEach(k => {
+        if (addrAliases.includes(k)) originalAddr = original[k];
+      });
+
+      // Buscar el nombre exacto de la columna de código postal original
+      let originalCP = '';
       const cpAliases = ['código postal','codigo postal','Código postal','Codigo postal','cp','CP'];
       Object.keys(original).forEach(k => {
-        if (cpAliases.includes(k)) delete original[k as any];
-        const kl = k.toLowerCase();
-        if (cpAliases.includes(kl)) delete original[k as any];
+        if (cpAliases.includes(k)) originalCP = original[k];
       });
+
       const daneOrigenOut = String(original['DANE origen'] ?? '').padStart(5, '0');
       const daneDestinoOut = String(d.dane_destino ?? original['DANE destino'] ?? '').padStart(5, '0');
       const cleanCityForExport = (v: any) => String(v ?? d.ciudad_destino ?? '')
@@ -396,12 +414,12 @@ const ProcessorView: React.FC = () => {
           const candidates = zonesDB.filter(z => normalizeCityKeyExport(z.nombre_municipio || '') === cityKey);
           if (candidates.length > 0) {
             cp = String(candidates[0].codigo_postal).replace(/\D/g, '').padStart(6, '0');
-            try { console.warn(`[EXPORT] CP truncado restaurado por ciudad: ${cityKey} -> ${cp}`); } catch {}
           }
         }
         if (cp.startsWith('00') && cp.length === 6) { cp = '0' + cp.substring(2); }
         return cp.length === 6 ? cp : cp.padStart(6, '0');
       })();
+
       const coordsFinal = (() => {
         if (String(d.coordenadas || '').trim()) return String(d.coordenadas);
         if (zonesDB.length > 0) {
@@ -413,7 +431,6 @@ const ProcessorView: React.FC = () => {
           }
           if (z) {
             if (typeof z.centerLat === 'number' && typeof z.centerLon === 'number') {
-              try { console.warn(`[EXPORT] Coordenadas faltantes, usando centroide para CP ${cpFinal || cityKey}`); } catch {}
               return `${z.centerLat}, ${z.centerLon}`;
             }
             if (Array.isArray(z.bbox) && z.bbox.length === 4) {
@@ -426,45 +443,61 @@ const ProcessorView: React.FC = () => {
         }
         return String(d.coordenadas || '');
       })();
-      const rowObj: Record<string, any> = {
+
+      // Construir el objeto de fila con el orden estricto solicitado para CSV
+      const rowObj: Record<string, any> = {};
+      
+      rowObj['DIRECCION ORIGINAL'] = originalAddr || d.direccion || '';
+      rowObj['DIRECCION GOOGLE'] = d.direccion_google || '';
+      rowObj['LOCALIDAD / BARRIO'] = d.localidad_detectada || '';
+      rowObj['CODIGO POSTAL ORIGINAL'] = originalCP || '';
+      rowObj['CODIGO POSTAL 472 (API)'] = cpFinal;
+      rowObj['DANE ORIGEN'] = String(daneOrigenOut);
+      rowObj['DANE DESTINO'] = String(daneDestinoOut);
+      rowObj['CIUDAD DE DESTINO'] = cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino);
+      rowObj['COORDENADAS'] = coordsFinal;
+
+      // Eliminar las columnas ruidosas
+      const noisyAliases = [
+        ...addrAliases, ...cpAliases, 
+        'DANE origen', 'DANE destino', 'Ciudad de destino', 
+        'Valor declarado', 'Localidad', 'Coordenada',
+        'DIRECCION', 'CODIGO POSTAL', 'Código Postal 472', 'Código Postal 472 (API)',
+        'DIRECCION ORIGINAL', 'DIRECCION GOOGLE', 'LOCALIDAD / BARRIO', 'CODIGO POSTAL ORIGINAL',
+        'DANE ORIGEN', 'DANE DESTINO', 'CIUDAD DE DESTINO', 'COORDENADAS'
+      ];
+
+      Object.keys(original).forEach(k => {
+        if (noisyAliases.some(alias => alias.toLowerCase() === k.toLowerCase())) {
+          delete original[k];
+        }
+      });
+
+      Object.assign(rowObj, {
         ...original,
-        'DANE origen': String(daneOrigenOut),
-        'DANE destino': String(daneDestinoOut),
-        'Ciudad de destino': cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino),
-        'Código Postal 472': (() => {
-          let cp = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
-          if (cp.length === 4) {
-            const daneDep = String(d.dane_destino ?? '')
-              .replace(/\D/g, '')
-              .padStart(5, '0')
-              .slice(0, 2);
-            if (daneDep === '05' && cp.startsWith('5')) {
-              cp = '05' + cp;
-            } else {
-              cp = cp.padStart(6, '0');
-            }
-          } else {
-            cp = cp.padStart(6, '0');
-          }
-          const cityFix = normalizeCityKeyExport(original['Ciudad de destino'] ?? d.ciudad_destino);
-          if (cityFix === 'ENVIGADO') cp = '055422';
-          return cp;
-        })(),
-        'Valor declarado': valorDeclarado,
-        'Localidad': d.localidad_detectada || '',
-        'Coordenada': coordsFinal || ''
-      };
+        'Valor declarado': valorDeclarado
+      });
+
       return rowObj;
     });
+
     const keySet = new Set<string>();
     const preferredOrder = [
-      'DANE origen','DANE destino','Ciudad de destino','Departamento de destino','Dirección','Valor declarado',
-      'Código Postal 472','Localidad','Coordenada'
+      'DIRECCION ORIGINAL',
+      'DIRECCION GOOGLE',
+      'LOCALIDAD / BARRIO',
+      'CODIGO POSTAL ORIGINAL',
+      'CODIGO POSTAL 472 (API)',
+      'DANE ORIGEN',
+      'DANE DESTINO',
+      'CIUDAD DE DESTINO',
+      'COORDENADAS'
     ];
     exportData.forEach(row => Object.keys(row).forEach(k => keySet.add(k)));
     const headers: string[] = [];
     preferredOrder.forEach(h => { if (keySet.has(h)) headers.push(h); });
     Array.from(keySet).forEach(k => { if (!headers.includes(k)) headers.push(k); });
+
     const quoteCSV = (val: any) => {
       let s = val === null || val === undefined ? '' : String(val);
       s = s.replace(/"/g, '""');
@@ -495,16 +528,29 @@ const ProcessorView: React.FC = () => {
       const original: Record<string, any> = { ...(d.originalData || {}) };
       // Mantener el Código Postal original si existe
       let originalCP = '';
-      const cpAliases = ['código postal','codigo postal','Código postal','Codigo postal','cp','CP'];
+      // Buscar el nombre exacto de la columna de dirección original
+      let originalAddr = '';
+      const addrAliases = ['dirección','direccion','Dirección','Direccion','ADDRESS','Address'];
       Object.keys(original).forEach(k => {
-        if (cpAliases.includes(k)) {
-          originalCP = original[k];
-          // No eliminamos la columna original para mantenerla en el reporte
+        if (addrAliases.includes(k)) {
+          originalAddr = original[k];
         }
       });
 
+      // Buscar el nombre exacto de la columna de código postal original
+      let originalCPKey = '';
+      const cpAliases = ['código postal','codigo postal','Código postal','Codigo postal','cp','CP'];
+      Object.keys(original).forEach(k => {
+        if (cpAliases.includes(k)) {
+          originalCPKey = k;
+          originalCP = original[k];
+        }
+      });
+
+      // --- Restauración de variables necesarias para el procesamiento ---
       const daneOrigenOut = String(original['DANE origen'] ?? '').padStart(5, '0');
       const daneDestinoOut = String(d.dane_destino ?? original['DANE destino'] ?? '').padStart(5, '0');
+      
       let cp = String(d.codigo_postal_asignado ?? '').replace(/\D/g, '');
       if (cp.length < 6) {
         const cityKey = normalizeCityKeyExport(original['Ciudad de destino'] ?? d.ciudad_destino);
@@ -529,6 +575,7 @@ const ProcessorView: React.FC = () => {
       }
       if (cp.length === 6 && cp.startsWith('00')) cp = '0' + cp.substring(2);
       const cpFinal = cp.length === 6 ? cp : '';
+
       const cleanCityForExport = (v: any) => String(v ?? d.ciudad_destino ?? '')
         .replace(/\(.*?\)/g, '')
         .replace(/\bD\.?C\.?\b/gi, '')
@@ -538,7 +585,9 @@ const ProcessorView: React.FC = () => {
         .replace(/[\u0300-\u036f]/g, '')
         .toUpperCase()
         .trim();
+
       const valorDeclarado = Number(String(original['Valor declarado'] ?? '').replace(/[^0-9]/g, '') || '0');
+
       const coordsFinal = (() => {
         const raw = String(d.coordenadas || '').trim();
         if (raw) {
@@ -569,17 +618,60 @@ const ProcessorView: React.FC = () => {
         }
         return '';
       })();
+      // -----------------------------------------------------------------
 
-      return {
+      // Construir el objeto de fila con el orden estricto solicitado
+      const rowObj: Record<string, any> = {};
+      
+      // 1. DIRECCION ORIGINAL
+      rowObj['DIRECCION ORIGINAL'] = originalAddr || d.direccion || '';
+      
+      // 2. DIRECCION GOOGLE (API-normalized)
+      rowObj['DIRECCION GOOGLE'] = d.direccion_google || '';
+      
+      // 3. LOCALIDAD / BARRIO (API-identified)
+      rowObj['LOCALIDAD / BARRIO'] = d.localidad_detectada || '';
+      
+      // 4. CODIGO POSTAL ORIGINAL
+      rowObj['CODIGO POSTAL ORIGINAL'] = originalCP || '';
+      
+      // 5. CODIGO POSTAL 472 (API)
+      rowObj['CODIGO POSTAL 472 (API)'] = String(cpFinal);
+
+      // 6. DANE ORIGEN
+      rowObj['DANE ORIGEN'] = String(daneOrigenOut);
+
+      // 7. DANE DESTINO
+      rowObj['DANE DESTINO'] = String(daneDestinoOut);
+
+      // 8. CIUDAD DE DESTINO
+      rowObj['CIUDAD DE DESTINO'] = cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino);
+
+      // 9. COORDENADAS
+      rowObj['COORDENADAS'] = coordsFinal;
+
+      // Eliminar las columnas que ya pusimos o que son duplicados ruidosos
+      const noisyAliases = [
+        ...addrAliases, 
+        ...cpAliases, 
+        'DANE origen', 'DANE destino', 'Ciudad de destino', 
+        'Valor declarado', 'Localidad', 'Coordenada',
+        'DIRECCION', 'CODIGO POSTAL', 'Código Postal 472', 'Código Postal 472 (API)'
+      ];
+
+      Object.keys(original).forEach(k => {
+        if (noisyAliases.some(alias => alias.toLowerCase() === k.toLowerCase())) {
+          delete original[k];
+        }
+      });
+
+      // Agregar el resto de los datos originales que no sean ruidosos
+      Object.assign(rowObj, {
         ...original,
-        'DANE origen': String(daneOrigenOut),
-        'DANE destino': String(daneDestinoOut),
-        'Ciudad de destino': cleanCityForExport(original['Ciudad de destino'] ?? d.ciudad_destino),
-        'CODIGO POSTAL 472 (API)': String(cpFinal),
-        'Valor declarado': valorDeclarado,
-        'Localidad': d.localidad_detectada || '',
-        'Coordenada': coordsFinal
-      };
+        'Valor declarado': valorDeclarado
+      });
+
+      return rowObj;
     });
 
     return out;

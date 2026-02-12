@@ -38,6 +38,7 @@ export interface AddressTemplate {
   codigo_postal_asignado?: string;
   coordenadas?: string; // New field for Latitude, Longitude
   localidad_detectada?: string;
+  direccion_google?: string; // Normalizada por API
   originalData?: any; // To store the full original row from Excel
 }
 
