@@ -38,7 +38,7 @@ const Login: React.FC<LoginProps> = ({ onSuccess }: LoginProps) => {
       // 1. Consulta manual a la tabla profiles buscando email y password_plain
       const { data, error: fetchError } = await supabase
         .from('profiles')
-        .select('email, password_plain, full_name, rol, role')
+        .select('email, password_plain, full_name, rol')
         .eq('email', userEmail)
         .eq('password_plain', String(password).trim())
         .maybeSingle();
@@ -58,7 +58,7 @@ const Login: React.FC<LoginProps> = ({ onSuccess }: LoginProps) => {
       const normalize = (s: string) => 
         s ? s.toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() : '';
 
-      const adminFieldRaw = (data as any).rol ?? (data as any).role ?? '';
+      const adminFieldRaw = (data as any).rol ?? '';
       const isAdmin = normalize(String(adminFieldRaw)) === 'admin';
       if (isAdmin) {
         onSuccess({ email: userEmail, role: 'Admin' });
