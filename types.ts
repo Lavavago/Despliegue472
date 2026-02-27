@@ -22,7 +22,7 @@ export interface PostalZone {
   centerLon: number;
 }
 
-export type UserRole = 'TI' | 'Contabilidad' | 'Facturación' | 'Operaciones';
+export type UserRole = 'TI' | 'Contabilidad' | 'Facturación' | 'Operaciones' | 'Admin';
 
 export interface AuthSession {
   email: string;

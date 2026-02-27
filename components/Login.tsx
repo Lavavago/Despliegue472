@@ -13,9 +13,10 @@ const ROLE_EMAILS: Record<UserRole, string> = {
   Contabilidad: 'contabilidad@colpostal472.com',
   Facturación: 'facturacion@colpostal472.com',
   Operaciones: 'operaciones@colpostal472.com',
+  Admin: 'admin@colpostal472.com',
 };
 
-const Login: React.FC<LoginProps> = ({ onSuccess }) => {
+const Login: React.FC<LoginProps> = ({ onSuccess }: LoginProps) => {
   const [role, setRole] = useState<UserRole>('TI');
   const [email, setEmail] = useState<string>(ROLE_EMAILS['TI']);
   const [password, setPassword] = useState<string>('');
@@ -37,7 +38,7 @@ const Login: React.FC<LoginProps> = ({ onSuccess }) => {
       // 1. Consulta manual a la tabla profiles buscando email y password_plain
       const { data, error: fetchError } = await supabase
         .from('profiles')
-        .select('email, password_plain, full_name')
+        .select('email, password_plain, full_name, rol, role')
         .eq('email', userEmail)
         .eq('password_plain', String(password).trim())
         .maybeSingle();
@@ -57,8 +58,15 @@ const Login: React.FC<LoginProps> = ({ onSuccess }) => {
       const normalize = (s: string) => 
         s ? s.toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() : '';
 
+      const adminFieldRaw = (data as any).rol ?? (data as any).role ?? '';
+      const isAdmin = normalize(String(adminFieldRaw)) === 'admin';
+      if (isAdmin) {
+        onSuccess({ email: userEmail, role: 'Admin' });
+        return;
+      }
+
       const selectedRole = normalize(role);
-      const isAuthorized = normalize(data.full_name) === selectedRole;
+      const isAuthorized = normalize((data as any).full_name) === selectedRole;
 
       if (!isAuthorized) {
         setError(`Este usuario no tiene permisos para acceder al módulo de ${role}`);
