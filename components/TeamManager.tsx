@@ -94,6 +94,11 @@ const TeamManager: React.FC<TeamManagerProps> = ({ onClose }) => {
   const saveEdit = async (id: string) => {
     setError(null);
     setSuccess(null);
+    const current = rows.find((x) => x.id === id);
+    if (current && String(current.rol || '').toLowerCase().trim() === 'admin') {
+      setError('El administrador no se puede editar.');
+      return;
+    }
     const payload: Partial<ProfileRow> = {
       email: editEmail.trim().toLowerCase(),
       password_plain: editPassword.trim(),
@@ -112,6 +117,11 @@ const TeamManager: React.FC<TeamManagerProps> = ({ onClose }) => {
   const removeUser = async (id: string) => {
     setError(null);
     setSuccess(null);
+    const current = rows.find((x) => x.id === id);
+    if (current && String(current.rol || '').toLowerCase().trim() === 'admin') {
+      setError('El administrador no se puede eliminar.');
+      return;
+    }
     const { error: err } = await supabase.from('profiles').delete().eq('id', id);
     if (err) {
       setError('No se pudo eliminar.');
@@ -234,14 +244,22 @@ const TeamManager: React.FC<TeamManagerProps> = ({ onClose }) => {
                         </div>
                       ) : (
                         <div className="flex justify-end space-x-2">
-                          <button onClick={() => startEdit(r)} className="px-2 py-1 rounded-md bg-slate-100 text-slate-700 text-xs hover:bg-slate-200 inline-flex items-center">
-                            <Pencil className="mr-1 h-3 w-3" />
-                            Editar
-                          </button>
-                          <button onClick={() => removeUser(r.id)} className="px-2 py-1 rounded-md bg-red-600 text-white text-xs hover:bg-red-700 inline-flex items-center">
-                            <Trash2 className="mr-1 h-3 w-3" />
-                            Eliminar
-                          </button>
+                          {String(r.rol || '').toLowerCase().trim() === 'admin' ? (
+                            <>
+                              <span className="px-2 py-1 rounded-md bg-yellow-100 text-yellow-800 text-xs">Admin</span>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => startEdit(r)} className="px-2 py-1 rounded-md bg-slate-100 text-slate-700 text-xs hover:bg-slate-200 inline-flex items-center">
+                                <Pencil className="mr-1 h-3 w-3" />
+                                Editar
+                              </button>
+                              <button onClick={() => removeUser(r.id)} className="px-2 py-1 rounded-md bg-red-600 text-white text-xs hover:bg-red-700 inline-flex items-center">
+                                <Trash2 className="mr-1 h-3 w-3" />
+                                Eliminar
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </td>
