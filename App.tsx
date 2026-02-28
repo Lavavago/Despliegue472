@@ -7,6 +7,7 @@ import MapView from './components/MapView';
 import Login from './components/Login';
 import { AuthSession } from './types';
 import { supabase, clearGeoCache, ensureMunicipalIndexWarmCache, getMunicipalIndexStats, ensureZonesWarmCache } from './services/postalService';
+import TeamManager from './components/TeamManager';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'database' | 'processor' | 'map'>(() => {
@@ -37,6 +38,7 @@ const App: React.FC = () => {
   const [showOldPwd, setShowOldPwd] = useState(false);
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [showTeamManager, setShowTeamManager] = useState(false);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const reset = params.get('reset');
@@ -66,6 +68,8 @@ const App: React.FC = () => {
             onTabChange={(t) => { setActiveTab(t); try { localStorage.setItem('activeTab', t); } catch {} }} 
             onLogout={() => { localStorage.removeItem('auth'); setAuth(null); }} 
             onChangePassword={() => { setPwdError(null); setPwdSuccess(null); setOldPwd(''); setNewPwd(''); setConfirmPwd(''); setShowChangePwd(true); }}
+            isAdmin={auth.role === 'Admin'}
+            onOpenTeam={() => setShowTeamManager(true)}
           />
           <main className="py-6 px-4 sm:px-6 lg:px-8 h-full">
             {activeTab === 'database' && <DatabaseView />}
@@ -210,6 +214,9 @@ const App: React.FC = () => {
                 <p className="mt-1 text-xs text-slate-400">Desarrollado para validación de cobertura 472.</p>
               </div>
             </footer>
+          )}
+          {showTeamManager && auth?.role === 'Admin' && (
+            <TeamManager onClose={() => setShowTeamManager(false)} />
           )}
         </>
       )}

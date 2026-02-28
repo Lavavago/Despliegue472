@@ -1,15 +1,17 @@
 import React from 'react';
 import gleRojo from '../pages/gleRojo.jpeg';
-import { Database, FileSpreadsheet, MapPin, Map as MapIcon, ArrowLeft } from 'lucide-react';
+import { Database, FileSpreadsheet, MapPin, Map as MapIcon, ArrowLeft, Users } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'database' | 'processor' | 'map';
   onTabChange: (tab: 'database' | 'processor' | 'map') => void;
   onLogout?: () => void;
   onChangePassword?: () => void;
+  isAdmin?: boolean;
+  onOpenTeam?: () => void;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, onLogout, onChangePassword }) => {
+const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, onLogout, onChangePassword, isAdmin, onOpenTeam }) => {
   return (
     <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -36,6 +38,15 @@ const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, onLogout, onCha
             >
               Cambiar Clave
             </button>
+            {isAdmin && (
+              <button
+                onClick={onOpenTeam}
+                className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100"
+              >
+                <Users className="mr-1 h-4 w-4" />
+                Equipo
+              </button>
+            )}
             <div className="flex space-x-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
               <button
                 onClick={() => onTabChange('database')}
